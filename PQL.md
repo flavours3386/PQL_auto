@@ -9,6 +9,11 @@
 3. Advanced Drive Service 추가 불필요 (REST API 직접 호출 방식)
 
 ## 변경 이력
+- 2026-03-09: `createCleanSheetFromRaw()` 성능 최적화
+  - `autoResizeColumns` 제거 → `setColumnWidths` 고정 너비 1회 호출
+  - `setNumberFormat('@')` 제거 → JS `String()` 변환으로 대체
+  - 필터링 조건 `Set.has()` O(1) 검색으로 전환
+  - String 변환 최소화 + OUTPUT_HEADERS 매핑 함수 사전 생성
 - 2026-03-09: Drive API v2 → v3 마이그레이션 대응
   - `Drive.Files.insert` → `Drive.Files.create`
   - `title` → `name`
@@ -223,61 +228,50 @@ function createCleanSheetFromRaw() {
   const idxAddr1 = rawHeaderMap['주소1'];
   const idxAddr2 = rawHeaderMap['주소2'];
 
+  // 필터링용 Set (includes O(n) → has O(1))
+  const upsellDeleteSet = new Set(['라이브', '제거중']);
+  const reviewDeleteSet = new Set(['제거중', '해지완료', '서비스 중단']);
+  const siteDeleteSet = new Set(['구독종료', '해지완료', '계정활성화']);
+  const badStatusSet = new Set(['구독없음', '서비스중단', '프로덕트온보딩중', '']);
+
+  // OUTPUT_HEADERS 매핑 함수 사전 생성 (루프 내 반복 if 제거)
+  const headerMappers = OUTPUT_HEADERS.map((headerName) => {
+    if (headerName === '서비스 라벨') return (row, ctx) => ctx.labelValue;
+    if (headerName === '주소') return (row, ctx) => ctx.mergedAddress;
+    if (headerName === '담당자전화번호') return (row, ctx) => ctx.phoneValue;
+    const rawIdx = rawHeaderMap[headerName];
+    if (rawIdx !== undefined) return (row) => String(row[rawIdx]);
+    return () => '';
+  });
+
   // 결과 데이터 저장소
   const outputValues = [];
-  outputValues.push(OUTPUT_HEADERS); // 설정한 순서대로 헤더 삽입
+  outputValues.push(OUTPUT_HEADERS);
 
   // 데이터 반복 처리
   for (let r = 1; r < rawValues.length; r++) {
     const row = rawValues[r];
-    let shouldDelete = false;
 
-    // --- 1. 삭제 조건 체크 (Raw 데이터 기준) ---
+    // --- 1. 삭제 조건 체크 ---
     if (idxRecentOrder30 !== undefined) {
       const v = row[idxRecentOrder30];
-      if (v === '' || v === null || Number(v) < 100) shouldDelete = true;
-    }
-    if (!shouldDelete && idxUpsellStatus !== undefined) {
-      if (['라이브', '제거중'].includes(String(row[idxUpsellStatus]).trim()))
-        shouldDelete = true;
-    }
-    if (!shouldDelete && idxReviewStatus !== undefined) {
-      if (['제거중', '해지완료', '서비스 중단'].includes(String(row[idxReviewStatus]).trim()))
-        shouldDelete = true;
-    }
-    if (!shouldDelete && idxSiteStatus !== undefined) {
-      if (['구독종료', '해지완료', '계정활성화'].includes(String(row[idxSiteStatus]).trim()))
-        shouldDelete = true;
-    }
-    if (!shouldDelete && idxManagerName !== undefined) {
-      if (String(row[idxManagerName]).trim() === '프로') shouldDelete = true;
+      if (v === '' || v === null || Number(v) < 100) continue;
     }
 
-    if (shouldDelete) continue;
+    // 각 상태값을 한 번만 String 변환 후 재사용
+    const strUpsell = idxUpsellStatus !== undefined ? String(row[idxUpsellStatus]).trim() : '';
+    const strReview = idxReviewStatus !== undefined ? String(row[idxReviewStatus]).trim() : '';
+    const strSite = idxSiteStatus !== undefined ? String(row[idxSiteStatus]).trim() : '';
+    const strManager = idxManagerName !== undefined ? String(row[idxManagerName]).trim() : '';
+
+    if (idxUpsellStatus !== undefined && upsellDeleteSet.has(strUpsell)) continue;
+    if (idxReviewStatus !== undefined && reviewDeleteSet.has(strReview)) continue;
+    if (idxSiteStatus !== undefined && siteDeleteSet.has(strSite)) continue;
+    if (idxManagerName !== undefined && strManager === '프로') continue;
 
     // --- 2. 값 가공 ---
 
-    // [라벨링]
-    let labelValue = '';
-    const vReview =
-      idxReviewStatus !== undefined ? String(row[idxReviewStatus]).trim() : '';
-    const vUpsell =
-      idxUpsellStatus !== undefined ? String(row[idxUpsellStatus]).trim() : '';
-    const vPush =
-      idxPushStatus !== undefined ? String(row[idxPushStatus]).trim() : '';
-    const badStatuses = ['구독없음', '서비스중단', '프로덕트온보딩중', ''];
-
-    const isReviewBad = badStatuses.includes(vReview);
-    const isUpsellBad = badStatuses.includes(vUpsell);
-    const isPushBad = badStatuses.includes(vPush);
-
-    if (isReviewBad && isUpsellBad && isPushBad) labelValue = 'null';
-    else if (vReview === '라이브' && vPush === '라이브')
-      labelValue = '알파리뷰, 알파푸시';
-    else if (vReview === '라이브') labelValue = '알파리뷰';
-    else if (vPush === '라이브') labelValue = '알파푸시';
-
-    // [전화번호 복구]
+    // [전화번호 복구] - 삭제 조건보다 뒤에 있으므로 필터링된 행만 처리
     let phoneValue = '';
     if (idxManagerPhone !== undefined) {
       let display = String(row[idxManagerPhone] || '').trim();
@@ -286,37 +280,37 @@ function createCleanSheetFromRaw() {
         if (digits.length === 10 && digits.startsWith('10'))
           digits = '0' + digits;
         if (digits.length === 11 && digits.startsWith('010')) {
-          display = `010-${digits.slice(3, 7)}-${digits.slice(7)}`;
+          display = '010-' + digits.slice(3, 7) + '-' + digits.slice(7);
         }
         phoneValue = display;
       }
     }
 
-    // [주소 통합]
-    let mergedAddress = '';
-    const addr1 =
-      idxAddr1 !== undefined ? String(row[idxAddr1] || '').trim() : '';
-    const addr2 =
-      idxAddr2 !== undefined ? String(row[idxAddr2] || '').trim() : '';
-    mergedAddress = (addr1 + ' ' + addr2).trim();
-
-    // --- 3. 최종 행 구성 (OUTPUT_HEADERS 순서대로 배치) ---
-    const newRow = OUTPUT_HEADERS.map((headerName) => {
-      // 커스텀 컬럼 처리
-      if (headerName === '서비스 라벨') return labelValue;
-      if (headerName === '주소') return mergedAddress;
-      if (headerName === '담당자전화번호') return phoneValue;
-
-      // 일반 컬럼 처리 (Raw 시트에서 매핑)
-      const rawIdx = rawHeaderMap[headerName];
-      if (rawIdx !== undefined) {
-        return row[rawIdx];
-      }
-      return ''; // 매핑 안되면 빈칸
-    });
-
-    // 전화번호 없는 행 제외
+    // 전화번호 없는 행 제외 (가공 전에 조기 탈출)
     if (idxManagerPhone !== undefined && phoneValue === '') continue;
+
+    // [라벨링] - 필터링에서 이미 변환한 strReview, strUpsell 재사용
+    const strPush = idxPushStatus !== undefined ? String(row[idxPushStatus]).trim() : '';
+    let labelValue = '';
+
+    const isReviewBad = badStatusSet.has(strReview);
+    const isUpsellBad = badStatusSet.has(strUpsell);
+    const isPushBad = badStatusSet.has(strPush);
+
+    if (isReviewBad && isUpsellBad && isPushBad) labelValue = 'null';
+    else if (strReview === '라이브' && strPush === '라이브')
+      labelValue = '알파리뷰, 알파푸시';
+    else if (strReview === '라이브') labelValue = '알파리뷰';
+    else if (strPush === '라이브') labelValue = '알파푸시';
+
+    // [주소 통합]
+    const addr1 = idxAddr1 !== undefined ? String(row[idxAddr1] || '').trim() : '';
+    const addr2 = idxAddr2 !== undefined ? String(row[idxAddr2] || '').trim() : '';
+    const mergedAddress = (addr1 + ' ' + addr2).trim();
+
+    // --- 3. 최종 행 구성 (사전 생성된 매핑 함수 사용) ---
+    const ctx = { labelValue: labelValue, phoneValue: phoneValue, mergedAddress: mergedAddress };
+    const newRow = headerMappers.map((fn) => fn(row, ctx));
 
     outputValues.push(newRow);
   }
@@ -331,24 +325,22 @@ function createCleanSheetFromRaw() {
   const newSheet = ss.insertSheet(newSheetName);
 
   if (outputValues.length > 0) {
-    // 텍스트 서식 적용 (0 잘림 방지)
+    const colCount = outputValues[0].length;
+
+    // 값 쓰기 (String 변환은 JS에서 이미 처리됨)
     newSheet
-      .getRange(1, 1, outputValues.length, outputValues[0].length)
-      .setNumberFormat('@');
-    // 값 넣기
-    newSheet
-      .getRange(1, 1, outputValues.length, outputValues[0].length)
+      .getRange(1, 1, outputValues.length, colCount)
       .setValues(outputValues);
 
-    // 스타일링
-    newSheet
-      .getRange(1, 1, 1, outputValues[0].length)
-      .setFontWeight('bold');
-    newSheet.autoResizeColumns(1, outputValues[0].length);
+    // 헤더 볼드 처리
+    newSheet.getRange(1, 1, 1, colCount).setFontWeight('bold');
+
+    // 고정 너비 설정 (autoResizeColumns 28회 API 호출 → 1회로 대체)
+    newSheet.setColumnWidths(1, colCount, 120);
   }
 
   SpreadsheetApp.getUi().alert(
-    `가공 완료!\n- 중요 컬럼 앞으로 정렬 완료\n- 생성된 시트: ${newSheetName}`
+    '가공 완료!\n- 중요 컬럼 앞으로 정렬 완료\n- 생성된 시트: ' + newSheetName
   );
 }
 ```

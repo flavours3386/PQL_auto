@@ -64,6 +64,15 @@ var res = UrlFetchApp.fetch(
 - 안정성이 중요한 스크립트는 `UrlFetchApp` + REST API 직접 호출이 더 안전
 - Advanced Service 제거 시 서비스 목록에서도 삭제 가능
 
+## 최근 변경사항
+
+### createCleanSheetFromRaw() 성능 최적화 (2026-03-09)
+- `autoResizeColumns(1, 28)` 제거 → `setColumnWidths(1, colCount, 120)` 1회 호출로 대체 (28회 → 1회)
+- `setNumberFormat('@')` 제거 → JS에서 `String()` 변환으로 대체 (API 호출 1회 감소)
+- 필터링 조건에 `Set.has()` 사용 (`Array.includes()` O(n) → O(1))
+- String 변환 1회만 수행 후 재사용, OUTPUT_HEADERS 매핑 함수 사전 생성
+- Sheets API 호출: 기존 ~33회 → 최적화 후 3회 (setValues, setFontWeight, setColumnWidths)
+
 ## 폴더 구조
 ```
 PQL_auto/
