@@ -136,54 +136,37 @@ function importLatestDataToRaw() {
       values = sourceSheet.getDataRange().getValues();
     } else {
       const blob = latestFile.getBlob();
-      blob.setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       try {
-        // Resumable Upload 방식 (5MB 이상 파일 지원)
-        const metadata = {
-          name: '[Temp] ' + latestFile.getName(),
-          parents: [TARGET_FOLDER_ID],
-          mimeType: 'application/vnd.google-apps.spreadsheet'
-        };
-        const token = ScriptApp.getOAuthToken();
+        // 1단계: DriveApp으로 xlsx 파일을 Drive에 업로드 (REST API 불필요)
+        var tempXlsx = DriveApp.getFolderById(TARGET_FOLDER_ID).createFile(blob);
+        tempXlsx.setName('[Temp XLSX] ' + latestFile.getName());
 
-        // 1단계: 업로드 세션 시작
-        var initRes = UrlFetchApp.fetch(
-          'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id',
+        // 2단계: files.copy로 Google Sheets 변환
+        var token = ScriptApp.getOAuthToken();
+        var copyRes = UrlFetchApp.fetch(
+          'https://www.googleapis.com/drive/v3/files/' + tempXlsx.getId() + '/copy?fields=id&supportsAllDrives=true',
           {
             method: 'post',
             contentType: 'application/json',
-            headers: {
-              Authorization: 'Bearer ' + token,
-              'X-Upload-Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            },
-            payload: JSON.stringify(metadata),
+            payload: JSON.stringify({
+              name: '[Temp] ' + latestFile.getName(),
+              mimeType: 'application/vnd.google-apps.spreadsheet'
+            }),
+            headers: { Authorization: 'Bearer ' + token },
             muteHttpExceptions: true
           }
         );
-
-        var uploadUrl = initRes.getHeaders()['Location'];
-        if (!uploadUrl) {
-          ui.alert('업로드 세션 생성 실패: ' + initRes.getContentText());
-          return false;
-        }
-
-        // 2단계: 파일 업로드 (크기 제한 없음)
-        var res = UrlFetchApp.fetch(uploadUrl, {
-          method: 'put',
-          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          payload: blob.getBytes(),
-          headers: { Authorization: 'Bearer ' + token },
-          muteHttpExceptions: true
-        });
-        var tempFileId = JSON.parse(res.getContentText()).id;
+        var tempFileId = JSON.parse(copyRes.getContentText()).id;
 
         if (!tempFileId) {
-          ui.alert('엑셀 변환 실패: ' + res.getContentText());
+          tempXlsx.setTrashed(true);
+          ui.alert('엑셀 변환 실패: ' + copyRes.getContentText());
           return false;
         }
 
         var tempSs = SpreadsheetApp.openById(tempFileId);
         values = tempSs.getSheets()[0].getDataRange().getValues();
+        tempXlsx.setTrashed(true);
         DriveApp.getFileById(tempFileId).setTrashed(true);
       } catch (e) {
         ui.alert('엑셀 변환 실패: ' + e.message);
