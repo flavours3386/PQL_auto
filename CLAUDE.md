@@ -5,7 +5,7 @@
 
 ## 기술 스택
 - Google Apps Script
-- Google Drive API v3 (REST, UrlFetchApp 직접 호출)
+- Google Drive API v3 (REST, `DriveApp` + `UrlFetchApp` `files.copy`)
 - Google Sheets API
 
 ## 주요 파일
@@ -39,32 +39,29 @@ Google이 Apps Script Advanced Drive Service의 기본 버전을 v2에서 v3로 
 | 3차 (최종) | Advanced Drive Service 완전 제거, `UrlFetchApp`으로 REST API 직접 호출 | 해결 |
 
 **최종 해결:**
-- `Drive.Files.insert` / `Drive.Files.create` (Advanced Service) → `UrlFetchApp.fetch` (REST API 직접 호출)
+- `Drive.Files.insert` / `Drive.Files.create` (Advanced Service) → `DriveApp.createFile` + `files.copy` API
 - `Drive.Files.remove` → `DriveApp.getFileById().setTrashed(true)`
 - Advanced Drive Service 의존성 완전 제거로 향후 버전 변경 영향 없음
 
-**핵심 코드 (변경 부분):**
+**핵심 코드 (현재 방식):**
 ```javascript
-// REST API multipart 업로드로 엑셀 → Google Sheets 변환
-const metadata = {
-  name: '[Temp] ' + latestFile.getName(),
-  parents: [TARGET_FOLDER_ID],
-  mimeType: 'application/vnd.google-apps.spreadsheet'
-};
-const boundary = Utilities.getUuid();
-// multipart body 구성 후 UrlFetchApp.fetch로 직접 호출
-var res = UrlFetchApp.fetch(
-  'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
-  options
+// 1. DriveApp으로 xlsx 업로드
+var tempXlsx = DriveApp.getFolderById(TARGET_FOLDER_ID).createFile(blob);
+// 2. files.copy API로 Google Sheets 변환
+var copyRes = UrlFetchApp.fetch(
+  'https://www.googleapis.com/drive/v3/files/' + tempXlsx.getId() + '/copy?fields=id&supportsAllDrives=true',
+  { method: 'post', contentType: 'application/json',
+    payload: JSON.stringify({ name: '[Temp]', mimeType: 'application/vnd.google-apps.spreadsheet' }),
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true }
 );
 ```
 
 **교훈:**
 - Google Advanced Service는 버전 자동 업그레이드로 예고 없이 깨질 수 있음
-- 안정성이 중요한 스크립트는 `UrlFetchApp` + REST API 직접 호출이 더 안전
+- REST API multipart/resumable 업로드보다 `DriveApp` + `files.copy` 분리가 더 안정적
 - Advanced Service 제거 시 서비스 목록에서도 삭제 가능
 
-### Multipart Upload 5MB 제한 오류 (2026-03-09)
+### 엑셀 변환 400 Bad Request (2026-03-09)
 
 **증상:**
 ```
@@ -72,12 +69,32 @@ var res = UrlFetchApp.fetch(
 ```
 
 **원인:**
-Drive API v3 multipart 업로드는 5MB 제한. 10,000행+ 엑셀 파일이 이 제한을 초과.
+1. REST API multipart/resumable 업로드 + 변환 시 대용량/암호화 파일에서 400 발생
+2. 비밀번호(열기 암호)가 걸린 xlsx는 Google Drive API가 변환 불가
 
-**해결:**
-`uploadType=multipart` → `uploadType=resumable` (2단계 업로드) 변경. 파일 크기 제한 없음.
+**시도한 해결 방법:**
+
+| 시도 | 내용 | 결과 |
+|------|------|------|
+| 1차 | `uploadType=multipart` REST API 직접 호출 | 400 Bad Request |
+| 2차 | `uploadType=resumable` 2단계 업로드 | 400 Bad Request |
+| 3차 (최종) | `DriveApp.createFile` + `files.copy` 분리 방식 | 해결 |
+
+**최종 해결:**
+- `DriveApp.createFile(blob)`으로 xlsx를 Drive에 업로드 (REST API 불필요)
+- `files.copy` API로 xlsx → Google Sheets 변환 (mimeType 지정)
+- 비밀번호가 걸린 xlsx는 업로드 전 비밀번호 제거 필요
+
+**교훈:**
+- REST API multipart/resumable 업로드 + 변환은 파일 조건에 따라 불안정
+- `DriveApp` 업로드 + `files.copy` 변환 분리가 더 안정적
+- 비밀번호(열기 암호)가 걸린 xlsx는 Google API로 변환 불가 (시트 보호는 가능)
 
 ## 최근 변경사항
+
+### 엑셀 변환 방식 변경 (2026-03-09)
+- REST API multipart/resumable 업로드 → `DriveApp.createFile` + `files.copy` 분리 방식
+- 대용량 파일, 공유 드라이브 등 다양한 환경에서 안정적 동작
 
 ### createCleanSheetFromRaw() 성능 최적화 (2026-03-09)
 - `autoResizeColumns(1, 28)` 제거 → `setColumnWidths(1, colCount, 120)` 1회 호출로 대체 (28회 → 1회)
