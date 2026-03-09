@@ -138,30 +138,43 @@ function importLatestDataToRaw() {
       const blob = latestFile.getBlob();
       blob.setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       try {
-        // Advanced Service 대신 REST API 직접 호출 (v3 호환 보장)
+        // Resumable Upload 방식 (5MB 이상 파일 지원)
         const metadata = {
           name: '[Temp] ' + latestFile.getName(),
           parents: [TARGET_FOLDER_ID],
           mimeType: 'application/vnd.google-apps.spreadsheet'
         };
-        const boundary = Utilities.getUuid();
-        const header = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n';
-        const middle = '\r\n--' + boundary + '\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n';
-        const ending = '\r\n--' + boundary + '--';
+        const token = ScriptApp.getOAuthToken();
 
-        var payload = [];
-        payload = payload.concat(Utilities.newBlob(header + JSON.stringify(metadata) + middle).getBytes());
-        payload = payload.concat(blob.getBytes());
-        payload = payload.concat(Utilities.newBlob(ending).getBytes());
+        // 1단계: 업로드 세션 시작
+        var initRes = UrlFetchApp.fetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id',
+          {
+            method: 'post',
+            contentType: 'application/json',
+            headers: {
+              Authorization: 'Bearer ' + token,
+              'X-Upload-Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            },
+            payload: JSON.stringify(metadata),
+            muteHttpExceptions: true
+          }
+        );
 
-        var options = {
-          method: 'post',
-          contentType: 'multipart/related; boundary=' + boundary,
-          payload: payload,
-          headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        var uploadUrl = initRes.getHeaders()['Location'];
+        if (!uploadUrl) {
+          ui.alert('업로드 세션 생성 실패: ' + initRes.getContentText());
+          return false;
+        }
+
+        // 2단계: 파일 업로드 (크기 제한 없음)
+        var res = UrlFetchApp.fetch(uploadUrl, {
+          method: 'put',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          payload: blob.getBytes(),
+          headers: { Authorization: 'Bearer ' + token },
           muteHttpExceptions: true
-        };
-        var res = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', options);
+        });
         var tempFileId = JSON.parse(res.getContentText()).id;
 
         if (!tempFileId) {

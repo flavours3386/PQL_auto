@@ -64,6 +64,19 @@ var res = UrlFetchApp.fetch(
 - 안정성이 중요한 스크립트는 `UrlFetchApp` + REST API 직접 호출이 더 안전
 - Advanced Service 제거 시 서비스 목록에서도 삭제 가능
 
+### Multipart Upload 5MB 제한 오류 (2026-03-09)
+
+**증상:**
+```
+엑셀 변환 실패: {"error":{"code":400,"message":"Bad Request"...}}
+```
+
+**원인:**
+Drive API v3 multipart 업로드는 5MB 제한. 10,000행+ 엑셀 파일이 이 제한을 초과.
+
+**해결:**
+`uploadType=multipart` → `uploadType=resumable` (2단계 업로드) 변경. 파일 크기 제한 없음.
+
 ## 최근 변경사항
 
 ### createCleanSheetFromRaw() 성능 최적화 (2026-03-09)
