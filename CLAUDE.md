@@ -1,5 +1,7 @@
 # PQL 자동화 프로젝트
 
+> 문서 목차 및 핵심 원칙: [AGENTS.md](AGENTS.md)
+
 ## 개요
 구글 드라이브에 업로드된 엑셀(리드) 파일을 Google Sheets로 가져와 필요한 컬럼만 남기고 가공하는 Google Apps Script 자동화 스크립트
 
@@ -112,6 +114,14 @@ var copyRes = UrlFetchApp.fetch(
 ## 폴더 구조
 ```
 PQL_auto/
-  CLAUDE.md    - 프로젝트 문서 (이 파일)
-  PQL.md       - 스크립트 코드 및 사용법
+├── CLAUDE.md              # 프로젝트 문서 (이 파일)
+├── AGENTS.md              # 목차 + 핵심 원칙
+├── ARCHITECTURE.md        # 데이터 흐름, 처리 단계
+├── PQL.md                 # Apps Script 코드 + 사용법
+├── docs/
+│   ├── PRODUCT_SENSE.md   # 제품 방향
+│   ├── PLANS.md           # 우선순위, 로드맵
+│   ├── design-docs/       # 설계 문서
+│   └── exec-plans/        # 실행 계획
+└── .gitignore
 ```
