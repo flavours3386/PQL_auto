@@ -263,12 +263,10 @@ function createCleanSheetFromRaw() {
     if (idxUpsellStatus !== undefined && upsellDeleteSet.has(strUpsell)) continue;
     if (idxReviewStatus !== undefined && reviewDeleteSet.has(strReview)) continue;
     if (idxSiteStatus !== undefined && siteDeleteSet.has(strSite)) continue;
-    if (idxManagerName !== undefined && strManager === '프로') continue;
-
-    // --- 2. 값 가공 ---
-
-    // [전화번호 복구] - 삭제 조건보다 뒤에 있으므로 필터링된 행만 처리
+    // [전화번호 복구] - 5번(프로 핸드폰 판정)에서 쓰려고 삭제 조건 사이로 이동.
+    //   1~4번 통과 행만 처리하므로 조기탈출 성능은 유지된다.
     let phoneValue = '';
+    let phoneDigits = '';
     if (idxManagerPhone !== undefined) {
       let display = String(row[idxManagerPhone] || '').trim();
       if (display !== '') {
@@ -279,8 +277,19 @@ function createCleanSheetFromRaw() {
           display = '010-' + digits.slice(3, 7) + '-' + digits.slice(7);
         }
         phoneValue = display;
+        phoneDigits = digits;
       }
     }
+
+    // 5. 담당자명 '프로' + 핸드폰(010) 아닌 번호 제외
+    //   과거: 프로 연락처가 고객사에 일괄 등록되어 프로 전체 제외 → 연락처 정상화 완료.
+    //   이제 프로 중 070/지역번호 등 비핸드폰만 제외한다.
+    if (idxManagerName !== undefined && strManager === '프로') {
+      const isMobile = /^010/.test(phoneDigits);
+      if (!isMobile) continue;
+    }
+
+    // --- 2. 값 가공 ---
 
     // 전화번호 없는 행 제외 (가공 전에 조기 탈출)
     if (idxManagerPhone !== undefined && phoneValue === '') continue;
