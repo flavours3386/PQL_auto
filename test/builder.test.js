@@ -41,7 +41,7 @@ test('단계별 탈락·역매핑 제외·딜 의심·타겟 집계', () => {
   assert.strictEqual(out.cleanRows[1][7], '901');
   assert.strictEqual(out.cleanRows[1][8], '업로드 안 함(딜 의심)');
   assert.strictEqual(out.cleanRows[2][8], '');
-  assert.deepStrictEqual(out.uploadItems.map((it) => [it.row, it.shopId, it.deal.title]), [[2, '9', '몰9']]);
+  assert.deepStrictEqual(out.uploadItems.map((it) => [it.row, it.shopId, it.deal.title, it.target, it.tier]), [[2, '9', '몰9', '업셀', '베이직']]);
   assert.deepStrictEqual(out.targetCounts, { '업셀, 푸시': 1, 업셀: 1 });
   assert.deepStrictEqual(out.matches.map((m) => m.tier), ['high', 'review']);
 });

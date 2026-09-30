@@ -298,6 +298,20 @@ function writeDealList_(ss, rows) {
   if (extra > 0) sh.getRange(rows.length + 1, 1, extra, 5).clearContent();
 }
 
+// 업로드 이력 탭에 이어 붙인다. 탭이 비어 있으면 헤더부터 쓴다. 월·날짜 열은 텍스트로 둬 날짜로 바뀌지 않게 한다.
+function appendUploadHistory_(ss, rows) {
+  if (!rows.length) return;
+  const sh = ss.getSheetByName(TAB_HISTORY) || ss.insertSheet(TAB_HISTORY);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, HISTORY_HEADERS.length).setValues([HISTORY_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  const start = sh.getLastRow() + 1;
+  sh.getRange(start, 1, rows.length, 4).setNumberFormat('@');
+  sh.getRange(start, 1, rows.length, HISTORY_HEADERS.length).setValues(rows);
+  SpreadsheetApp.flush();
+}
+
 function writeUploadColumn_(ss, tabName, col) {
   if (!col.length) return;
   ss.getSheetByName(tabName).getRange(2, OUTPUT_HEADERS.indexOf('업로드') + 1, col.length, 1).setValues(col);

@@ -125,6 +125,12 @@ function runPql() {
     const up = planUpload_(out.uploadItems, AUTO_UPLOAD, UPLOAD_MAX);
     const results = step_('Pipedrive 업로드', function () { return pdCreateDeals_(token, up.items, started + UPLOAD_TIME_BUDGET_SEC * 1000); });
     step_('업로드 결과 기록', function () { writeUploadColumn_(ss, cleanTab, uploadColumn_(out.cleanRows, up.items, results, up)); });
+    let historyWarn = '';
+    try {
+      appendUploadHistory_(ss, uploadSummaryRows_(up.items, results, pqlMonth_(file.getName(), today), today));
+    } catch (e) {
+      historyWarn = '업로드 이력 기록 실패: ' + e.message;
+    }
     const created = results.filter(function (r) { return r.id; }).length;
     const skipped = results.filter(function (r) { return r.skipped; }).length;
 
@@ -142,7 +148,7 @@ function runPql() {
       overLimit: plan.overLimit,
       pending: pending.length,
       elapsedSec: Math.round((Date.now() - started) / 1000),
-    }).concat(['clean 탭: ' + cleanTab + ' (업로드 열에 딜 ID·실패 사유)']).concat(outputs.warn ? [outputs.warn] : []));
+    }).concat(['clean 탭: ' + cleanTab + ' (업로드 열에 딜 ID·실패 사유)']).concat([outputs.warn, historyWarn].filter(function (w) { return w; })));
   } catch (e) {
     ui.alert('PQL 생성 실패', e.message, ui.ButtonSet.OK);
   } finally {

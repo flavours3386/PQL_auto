@@ -231,6 +231,7 @@ function uploadItem_(r, label, ids, row) {
   return {
     row: row,
     shopId: r.shopId,
+    tier: tier ? tier.name : '',
     org: { name: r.get('회사명') || title, address: r.address },
     person: { name: r.get('담당자명') || title, email: r.get('담당자이메일'), phone: r.phone },
     deal: { title: title, owner_id: ids.ownerId, pipeline_id: SALES_PIPELINE_ID, stage_id: ids.stageId, label_ids: labelIds, custom_fields: cf },
@@ -529,6 +530,37 @@ function mappingNote_(source, raw, shopId, keys, today) {
   return '[PQL ' + source + '매핑 ' + today + "] shop_id '" + raw + "' → " + shopId + ' (근거: ' + keys.join(', ') + ')';
 }
 
+/* ---------- 업로드 이력 ---------- */
+
+// PQL 월 = 원천 파일명 all_subscription_MMDD.csv의 MM. 연도는 업로드일 기준이고, 6개월 넘게 차이 나면 해를 넘긴 것으로 본다.
+function pqlMonth_(csvName, uploadDate) {
+  const m = /^all_subscription_(\d{2})\d{2}\.csv$/i.exec(csvName);
+  if (!m) return uploadDate.slice(0, 7);
+  const y = Number(uploadDate.slice(0, 4));
+  const um = Number(uploadDate.slice(5, 7));
+  const fm = Number(m[1]);
+  const year = fm < um - 6 ? y + 1 : fm > um + 6 ? y - 1 : y;
+  return year + '-' + (fm < 10 ? '0' : '') + fm;
+}
+
+// 실제로 딜이 만들어진 것만 (타겟 × 세일즈티어)별로 세고 전체 합계 행을 붙인다. 올린 게 없으면 빈 배열.
+function uploadSummaryRows_(items, results, month, uploadDate) {
+  const counts = {};
+  let total = 0;
+  items.forEach(function (it, k) {
+    if (!(results[k] && results[k].id)) return;
+    const key = JSON.stringify([it.target, it.tier || '']);
+    counts[key] = (counts[key] || 0) + 1;
+    total++;
+  });
+  if (!total) return [];
+  const tierIndex = function (name) { const i = SALES_TIERS.map(function (t) { return t.name; }).indexOf(name); return i < 0 ? 99 : i; };
+  const rows = Object.keys(counts).map(function (key) { const p = JSON.parse(key); return [month, uploadDate, p[0], p[1], counts[key]]; });
+  rows.sort(function (a, b) { return a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : tierIndex(a[3]) - tierIndex(b[3]); });
+  rows.push([month, uploadDate, '전체', '전체', total]);
+  return rows;
+}
+
 /* ---------- 요약 ---------- */
 
 function uploadLine_(u) {
@@ -621,8 +653,12 @@ function createPqlBuilder_(opts) {
         const label = serviceLabel_(r);
         const sus = suspect[r.shopId] || [];
         cleanRows.push(cleanRow_(r, targets, label, sus, sus.length ? '업로드 안 함(딜 의심)' : ''));
-        if (!sus.length) uploadItems.push(uploadItem_(r, label, opts.uploadIds, cleanRows.length - 1));
         const key = targets.join(', ');
+        if (!sus.length) {
+          const item = uploadItem_(r, label, opts.uploadIds, cleanRows.length - 1);
+          item.target = key;
+          uploadItems.push(item);
+        }
         targetCounts[key] = (targetCounts[key] || 0) + 1;
       });
       return { cleanRows: cleanRows, uploadItems: uploadItems, matches: matches, counts: counts, targetCounts: targetCounts };

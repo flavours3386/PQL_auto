@@ -44,6 +44,7 @@ PQL_auto/
 - Sales 딜 제외를 코드가 한다(수동 deal list·XLOOKUP 대체). shop_id가 빈칸·텍스트인 딜은 이메일·전화·이름·URL로 CSV와 대조해 키 2개 이상 일치 시 Pipedrive shop_id 자동 반영(노트로 원래 값 보존), 나머지는 `shop_id 매핑` 탭에서 승인/거절
 - 결과를 Pipedrive 딜로 자동 업로드(0901 수동 가져오기와 같은 필드 배치 + 세일즈티어). xlsx는 만들지 않는다(수동 가져오기와 겹치면 중복 딜)
 - 배포 전 Orca(Codex) 독립 리뷰에서 Critical 2·Important 7 수정: 실행 잠금, shop_id 쓰기 직전 재확인, 이메일+전화만으로 자동 반영 금지, 업로드 선행 실패 시 딜 보류, 시간 예산·429 상한, 필수 열 23개, shop_id 검증·중복 중단, 매핑 탭 쓰기 순서. 테스트 52개(가짜 Pipedrive·시트 포함)
+- `업로드 이력` 탭: 실행마다 월(원천 파일 기준)·업로드일·타겟·세일즈티어별 업로드 수와 전체 합계를 누적(PQL 추세용). 2026-10 PQL 194건부터 기록
 - 설계 = `docs/design-docs/2026-09-30-pql-pipeline-refactor-design.md`, 계획 = `docs/exec-plans/2026-09-30-pql-pipeline-refactor.md`
 
 ## 트러블슈팅
