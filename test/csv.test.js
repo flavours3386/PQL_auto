@@ -52,25 +52,28 @@ test('한 행이 분할 크기보다 크면 멈춘다', () => {
 });
 
 test('디코더가 BOM을 지워도(Apps Script getContentText) restoreBom_로 감싸면 조각 경계가 밀리지 않는다', () => {
-  const body = 'a,b\n' + Array.from({ length: 50 }, (_, i) => i + ',"값' + i + '"').join('\n') + '\n';
-  const count = (csv, wrap) => {
+  const body = 'shop_id,b\n' + Array.from({ length: 50 }, (_, i) => i + ',"값' + i + '"').join('\n') + '\n';
+  const count = (csv, dec, wrap) => {
     const buf = Buffer.from(csv, 'utf8');
-    const strip = new TextDecoder('utf-8'); // 기본값: BOM 삭제
-    const fetch = (s, e) => strip.decode(buf.subarray(s, e + 1));
+    const fetch = (s, e) => dec.decode(buf.subarray(s, e + 1));
+    const probe = () => fetch(3, 130);
     const rows = [];
     const p = createCsvParser_((r) => rows.push(r));
-    streamChunks_(buf.length, 64, wrap ? wrap(fetch) : fetch, p.feed);
+    streamChunks_(buf.length, 64, wrap ? restoreBom_(fetch, probe) : fetch, p.feed);
     p.end();
-    return rows.length;
+    return JSON.stringify(rows);
   };
-  assert.notStrictEqual(count('﻿' + body), 51); // 감싸지 않으면 조각 행이 끼어든다 (재현)
-  assert.strictEqual(count('﻿' + body, (f) => restoreBom_(f, true)), 51);
-  assert.strictEqual(count(body, (f) => restoreBom_(f, false)), 51);
+  const expected = JSON.stringify(parseAll([body]));
+  const strip = new TextDecoder('utf-8'); // 기본값: BOM 삭제 (Apps Script와 같음)
+  const keep = new TextDecoder('utf-8', { ignoreBOM: true });
+  assert.notStrictEqual(count('\ufeff' + body, strip, false), expected); // 감싸지 않으면 조각 행이 끼어든다 (재현)
+  assert.strictEqual(count('\ufeff' + body, strip, true), expected);
+  assert.strictEqual(count('\ufeff' + body, keep, true), expected);
+  assert.strictEqual(count(body, strip, true), expected); // BOM 없는 파일
 });
 
-test('isUtf8Bom_: 부호 있는 바이트(Apps Script)와 없는 바이트 모두 판별', () => {
-  assert.strictEqual(isUtf8Bom_([-17, -69, -65]), true);
-  assert.strictEqual(isUtf8Bom_([0xef, 0xbb, 0xbf]), true);
-  assert.strictEqual(isUtf8Bom_([0x73, 0x68, 0x6f]), false);
-  assert.strictEqual(isUtf8Bom_([]), false);
+test('BOM 판별용 응답이 비면 조용히 넘어가지 않고 멈춘다', () => {
+  const wrapped = restoreBom_(() => 'shop_id,b\n1,2\n', () => '');
+  assert.throws(() => wrapped(0, 20), /첫머리 확인 실패/);
+  assert.strictEqual(restoreBom_(() => '\ufeffshop_id\n', () => { throw new Error('호출되면 안 됨'); })(0, 20), '\ufeffshop_id\n');
 });

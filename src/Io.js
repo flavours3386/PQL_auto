@@ -124,9 +124,9 @@ function streamCsvFile_(file, onRow) {
     return res;
   };
   const size = file.getSize();
-  const hasBom = size >= 3 && isUtf8Bom_(fetchRange(0, 2).getContent());
   const fetchText = function (start, end) { return fetchRange(start, end).getContentText('UTF-8'); };
-  streamChunks_(size, DOWNLOAD_CHUNK_BYTES, restoreBom_(fetchText, hasBom), parser.feed);
+  const probeFrom3 = function () { return size > 3 ? fetchText(3, Math.min(size, 131) - 1) : 'x'; };
+  streamChunks_(size, DOWNLOAD_CHUNK_BYTES, restoreBom_(fetchText, probeFrom3), parser.feed);
   parser.end();
 }
 

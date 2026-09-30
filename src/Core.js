@@ -94,17 +94,18 @@ function streamChunks_(size, chunkBytes, fetchRange, onText) {
   }
 }
 
-// Apps Script getContentText는 UTF-8 BOM을 지운다. 첫 조각에 BOM을 되돌려야 바이트 오프셋이 3바이트 밀리지 않는다.
-function restoreBom_(fetchRange, hasBom) {
+// Apps Script getContentText는 파일 첫머리의 UTF-8 BOM을 지운다(2026-09-30 실측). 그러면 첫 조각 바이트 수가 3 적게 계산돼
+// 다음 조각이 3바이트 앞당겨진다. 첫 조각이 BOM 없이 오면 3바이트 뒤부터 받은 글자(probeFrom3)와 첫머리를 비교해,
+// 같으면 BOM이 지워진 것이므로 되돌린다. (3바이트 Range 요청은 Apps Script에서 빈 본문이 와서 바이트로는 판별하지 않는다)
+function restoreBom_(fetchRange, probeFrom3) {
   return function (start, end) {
     const text = fetchRange(start, end);
-    return start === 0 && hasBom && text.charCodeAt(0) !== 0xfeff ? '﻿' + text : text;
+    if (start !== 0 || text.charCodeAt(0) === 0xfeff) return text;
+    const probe = probeFrom3();
+    if (!probe) throw new Error('CSV 첫머리 확인 실패(빈 응답)');
+    const n = Math.min(32, probe.length - 1, text.length); // probe 끝 글자는 잘렸을 수 있다
+    return n > 0 && text.slice(0, n) === probe.slice(0, n) ? '\ufeff' + text : text;
   };
-}
-
-// Apps Script getContent()는 부호 있는 바이트(-128~127)를 준다
-function isUtf8Bom_(bytes) {
-  return bytes.length >= 3 && (bytes[0] & 0xff) === 0xef && (bytes[1] & 0xff) === 0xbb && (bytes[2] & 0xff) === 0xbf;
 }
 
 /* ---------- 정규화 ---------- */
