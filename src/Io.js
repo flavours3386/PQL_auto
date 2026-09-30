@@ -95,6 +95,76 @@ function pdSetShopId_(token, dealId, shopId, note) {
   }
 }
 
+// 여러 요청을 동시에 보낸다. 429(요청 과다)는 하나씩 재시도한다 (429는 처리되지 않은 요청이라 다시 보내도 중복되지 않는다).
+function pdFetchAll_(token, reqs) {
+  if (!reqs.length) return [];
+  const responses = UrlFetchApp.fetchAll(reqs.map(function (r) {
+    const o = { url: 'https://api.pipedrive.com' + r.path, method: r.method, muteHttpExceptions: true, headers: { 'x-api-token': token } };
+    if (r.body) {
+      o.contentType = 'application/json';
+      o.payload = JSON.stringify(r.body);
+    }
+    return o;
+  }));
+  return responses.map(function (res, k) {
+    const code = res.getResponseCode();
+    if (code === 429) {
+      try {
+        return { ok: true, body: pdRequest_(token, reqs[k].method, reqs[k].path, reqs[k].body) };
+      } catch (e) {
+        return { ok: false, error: e.message.slice(0, 120) };
+      }
+    }
+    if (code >= 300) return { ok: false, error: code + ' ' + res.getContentText().slice(0, 120) };
+    return { ok: true, body: JSON.parse(res.getContentText()) };
+  });
+}
+
+// UPLOAD_BATCH곳씩 조직(같은 이름 재사용, 없으면 생성) → 담당자 → 딜 순으로 만든다. deadlineMs가 지나면 남은 곳은 skipped.
+function pdCreateDeals_(token, items, deadlineMs) {
+  const results = [];
+  const orgIds = {}; // 이번 실행 안에서 조직 이름 → id
+  for (let i = 0; i < items.length; i += UPLOAD_BATCH) {
+    if (Date.now() > deadlineMs) {
+      for (let j = i; j < items.length; j++) results.push({ skipped: true });
+      break;
+    }
+    const batch = items.slice(i, i + UPLOAD_BATCH);
+    const orgOf = {};
+    batch.forEach(function (it) { orgOf[it.org.name] = it.org; });
+    const names = Object.keys(orgOf).filter(function (n) { return !(n in orgIds); });
+    const found = pdFetchAll_(token, names.map(function (n) {
+      return { method: 'get', path: '/api/v2/organizations/search?term=' + encodeURIComponent(n) + '&fields=name&exact_match=true&limit=1' };
+    }));
+    const missing = [];
+    names.forEach(function (n, k) {
+      const items0 = found[k].ok && found[k].body.data && found[k].body.data.items;
+      if (items0 && items0.length) orgIds[n] = items0[0].item.id;
+      else missing.push(n);
+    });
+    const created = pdFetchAll_(token, missing.map(function (n) { return { method: 'post', path: '/api/v2/organizations', body: orgPayload_(orgOf[n]) }; }));
+    missing.forEach(function (n, k) { if (created[k].ok) orgIds[n] = created[k].body.data.id; });
+
+    const persons = pdFetchAll_(token, batch.map(function (it) {
+      return { method: 'post', path: '/api/v2/persons', body: personPayload_(it.person, orgIds[it.org.name]) };
+    }));
+    const deals = pdFetchAll_(token, batch.map(function (it, k) {
+      return { method: 'post', path: '/api/v2/deals', body: dealPayload_(it, persons[k].ok ? persons[k].body.data.id : null, orgIds[it.org.name]) };
+    }));
+    batch.forEach(function (it, k) {
+      if (!deals[k].ok) {
+        results.push({ error: deals[k].error });
+        return;
+      }
+      const warn = [];
+      if (!orgIds[it.org.name]) warn.push('조직 생성 실패');
+      if (!persons[k].ok) warn.push('담당자 생성 실패');
+      results.push({ id: deals[k].body.data.id, warn: warn.join(', ') });
+    });
+  }
+  return results;
+}
+
 /* ---------- Drive ---------- */
 
 function findLatestCsv_() {
@@ -130,27 +200,6 @@ function streamCsvFile_(file, onRow) {
   parser.end();
 }
 
-// 임시 스프레드시트에 쓰고 xlsx로 내보낸 뒤 임시본은 휴지통으로. 실행한 사람의 내 드라이브에 저장된다.
-function exportUploadXlsx_(rows, fileName) {
-  const tmp = SpreadsheetApp.create('[tmp] ' + fileName);
-  try {
-    const sh = tmp.getSheets()[0];
-    const range = sh.getRange(1, 1, rows.length, rows[0].length);
-    range.setNumberFormat('@'); // 전화번호 앞자리 0, shop_id 텍스트 보존
-    if (rows.length > 1) sh.getRange(2, 5, rows.length - 1, 1).setNumberFormat('0'); // 월 주문 수 (Pipedrive 숫자 필드)
-    range.setValues(rows);
-    SpreadsheetApp.flush();
-    const res = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx', {
-      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true,
-    });
-    if (res.getResponseCode() !== 200) throw new Error('xlsx 변환 실패 ' + res.getResponseCode());
-    return DriveApp.createFile(res.getBlob().setName(fileName));
-  } finally {
-    DriveApp.getFileById(tmp.getId()).setTrashed(true);
-  }
-}
-
 /* ---------- Sheets ---------- */
 
 function readMappingRows_(ss) {
@@ -179,6 +228,11 @@ function writeDealList_(ss, rows) {
   const sh = ss.getSheetByName(TAB_DEAL_LIST) || ss.insertSheet(TAB_DEAL_LIST);
   sh.getRange(1, 1, sh.getMaxRows(), 5).clearContent();
   sh.getRange(1, 1, rows.length, 5).setValues(rows);
+}
+
+function writeUploadColumn_(ss, tabName, col) {
+  if (!col.length) return;
+  ss.getSheetByName(tabName).getRange(2, OUTPUT_HEADERS.indexOf('업로드') + 1, col.length, 1).setValues(col);
 }
 
 function writeCleanTab_(ss, rows) {

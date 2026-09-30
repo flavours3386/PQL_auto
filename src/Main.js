@@ -81,7 +81,8 @@ function runPql() {
     const state = step_('승인 매핑 반영', function () { return applyApproved_(token, readMappingState_(readMappingRows_(ss)), today); });
     const pd = step_('Pipedrive 조회', function () { return fetchPipedrive_(token); });
     const file = step_('CSV 찾기', findLatestCsv_);
-    const builder = createPqlBuilder_({ dealShopIds: pd.dealShopIds, unmappedDeals: pd.unmappedDeals, rejectedPairs: state.rejectedPairs });
+    const uploadIds = step_('업로드 설정 확인', function () { return resolveUploadIds_(pd.users, pd.stages, pd.labels); });
+    const builder = createPqlBuilder_({ dealShopIds: pd.dealShopIds, unmappedDeals: pd.unmappedDeals, rejectedPairs: state.rejectedPairs, uploadIds: uploadIds });
     step_('CSV 읽기', function () { streamCsvFile_(file, builder.onRow); });
     const out = builder.finish();
 
@@ -98,7 +99,12 @@ function runPql() {
       writeMappingRows_(ss, pending.concat(auto.rows, state.keep));
       return writeCleanTab_(ss, out.cleanRows);
     });
-    const xlsx = step_('xlsx 생성', function () { return exportUploadXlsx_(out.uploadRows, uploadFileName_(file.getName(), todayStr_('MMdd'))); });
+    // 시트를 먼저 쓴 뒤 업로드한다: 업로드 도중 시간 한도에 걸려도 clean 탭은 남고, 올라간 곳은 다음 실행에서 딜로 빠진다
+    const up = planUpload_(out.uploadItems, AUTO_UPLOAD, UPLOAD_MAX);
+    const results = step_('Pipedrive 업로드', function () { return pdCreateDeals_(token, up.items, started + UPLOAD_TIME_BUDGET_SEC * 1000); });
+    step_('업로드 결과 기록', function () { writeUploadColumn_(ss, cleanTab, uploadColumn_(out.cleanRows, up.items, results, up)); });
+    const created = results.filter(function (r) { return r.id; }).length;
+    const skipped = results.filter(function (r) { return r.skipped; }).length;
 
     showSummary_(summaryLines_({
       fileName: file.getName(),
@@ -106,14 +112,15 @@ function runPql() {
       counts: out.counts,
       targetCounts: out.targetCounts,
       cleanCount: out.cleanRows.length - 1,
-      uploadCount: out.uploadRows.length - 1,
+      suspectCount: out.cleanRows.length - 1 - out.uploadItems.length,
+      upload: { total: out.uploadItems.length, created: created, failed: results.length - created - skipped, skipped: skipped, blocked: up.blocked, off: up.off },
       approvedApplied: state.applied,
       autoApplied: plan.auto.length - auto.failed,
       autoFailed: auto.failed,
       overLimit: plan.overLimit,
       pending: pending.length,
       elapsedSec: Math.round((Date.now() - started) / 1000),
-    }).concat(['clean 탭: ' + cleanTab]), xlsx);
+    }).concat(['clean 탭: ' + cleanTab + ' (업로드 열에 딜 ID·실패 사유)']));
   } catch (e) {
     ui.alert('PQL 생성 실패', e.message, ui.ButtonSet.OK);
   }
@@ -132,11 +139,10 @@ function applyApprovedMappings() {
   }
 }
 
-function showSummary_(lines, xlsx) {
+function showSummary_(lines) {
   const esc = function (s) {
     return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
   };
-  const html = '<div style="font:13px/1.7 sans-serif">' + lines.map(esc).join('<br>') +
-    '<p><a href="' + esc(xlsx.getUrl()) + '" target="_blank">' + esc(xlsx.getName()) + ' 열기</a> (내 드라이브 · 열린 화면에서 다운로드)</p></div>';
+  const html = '<div style="font:13px/1.7 sans-serif">' + lines.map(esc).join('<br>') + '</div>';
   SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(480).setHeight(520), 'PQL 생성 완료');
 }

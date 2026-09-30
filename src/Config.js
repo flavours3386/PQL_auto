@@ -13,6 +13,11 @@ const SALES_PIPELINE_ID = 9;
 const PD_FIELD_SHOP_ID = '9d4ea1fcf0bde157910e96a2e0354e76c220e6c8';
 const PD_FIELD_URL = '5a7464db665cc9fb3cebc7530c536f39205768ca';
 const PD_FIELD_MALL_NAME = '4cf3a83ff7316bb926dbf2c7f9c7b92308bad7bc';
+const PD_FIELD_MALL_ID = '75b5424cae4b1b2b0d85a5ec20cd2c3c06d0d704'; // 상점아이디
+const PD_FIELD_HOSTING = 'c65eb46e55631cc8b7967d1cda485a9f7aae72ef'; // 호스팅사 (선택형)
+const PD_FIELD_MONTHLY_ORDERS = '49e25aa8c079f6a979383c7ab188e0405cb743e3'; // 월 주문 수
+const PD_HOSTING_OPTION = { cafe24: 388, imweb: 389 }; // 호스팅사 선택지 id
+const PD_HOSTING_OTHER = 393; // 기타
 const PD_TOKEN_PROPERTY = 'PIPEDRIVE_API_TOKEN';
 
 const AUTO_APPLY = true; // 높은 확신 역매핑을 Pipedrive에 자동 반영
@@ -20,6 +25,11 @@ const AUTO_APPLY_MAX = 100; // 한 실행에서 이보다 많으면 자동 반�
 
 const DEAL_OWNER = '한서연';
 const DEAL_STAGE = '컨택전';
+
+const AUTO_UPLOAD = true; // PQL 생성 때 결과를 Pipedrive 딜로 바로 만든다
+const UPLOAD_MAX = 500; // 대상이 이보다 많으면 원천 이상으로 보고 한 건도 올리지 않는다
+const UPLOAD_TIME_BUDGET_SEC = 300; // 실행 시작부터 이 시간이 지나면 업로드를 멈춘다 (한도 6분, 남은 곳은 다음 실행에서 이어짐)
+const UPLOAD_BATCH = 10; // 동시 요청 묶음 크기
 
 const TAB_DEAL_LIST = 'deal list';
 const TAB_MAPPING = 'shop_id 매핑';
@@ -42,11 +52,10 @@ const TARGETS = [
 const REQUIRED_COLUMNS = ['shop_id', '플랫폼', '최근 30일 플랫폼 주문수', '알파리뷰 상태', '알파업셀 상태', '알파푸시 상태', '사이트 상태', '담당자명', '담당자전화번호'];
 
 const OUTPUT_HEADERS = [
-  'shop_name', 'shop_id', 'mall_id', '플랫폼', '최근 30일 플랫폼 주문수(API)', '타겟', '서비스 라벨', '딜 의심',
+  'shop_name', 'shop_id', 'mall_id', '플랫폼', '최근 30일 플랫폼 주문수(API)', '타겟', '서비스 라벨', '딜 의심', '업로드',
   '회사명', '담당자명', '쇼핑몰명', '담당자전화번호', '담당자이메일', '대표도메인', '주소',
   'shop_no', '플랜', '사이트 상태', '알파리뷰 상태', '알파업셀 상태', '알파푸시 상태',
   '최근 30일 플랫폼 주문수', '최근 30일 전체 주문수', '설치시점 플랫폼 주문수(API)',
   '최근 30일 UV(방문자수)', '최근 30일 PV(페이지뷰)', '임직원 수', '이메일', '사업자', '고객센터', '전화번호', '담당자직책', '결제담당이메일',
 ];
-const UPLOAD_HEADERS = ['거래 제목', 'shop_id', '상점아이디', '호스팅사', '월 주문 수', '거래 소유자', '단계 (파이프라인)', '거래 라벨', '조직 이름', '이름', '쇼핑몰명', '전화', '이메일', 'URL', '주소'];
 const MAPPING_HEADERS = ['딜 ID', '딜 이름', '원래 shop_id', '후보 shop_id', '후보 shop_name', '일치 키', '신뢰도', '판정', '상태', '기록일'];

@@ -56,24 +56,54 @@ test('자동 반영 계획: 상한 이하면 자동, 초과면 전부 대기', (
   assert.strictEqual(p.overLimit, false);
 });
 
-test('매핑 행·노트·파일명', () => {
+test('매핑 행·노트', () => {
   const match = { deal: { id: 9, title: '서브마켓', raw: '채널톡' } };
   assert.deepStrictEqual(mappingRow_(match, { shopId: '108903', keys: ['email', 'url'], shopName: '서브마켓' }, '높음', '', '반영됨', '2026-10-01'),
     ['9', '서브마켓', '채널톡', '108903', '서브마켓', 'email, url', '높음', '', '반영됨', '2026-10-01']);
   assert.strictEqual(mappingNote_('자동', '채널톡', '108903', ['email', 'url'], '2026-10-01'),
     "[PQL 자동매핑 2026-10-01] shop_id '채널톡' → 108903 (근거: email, url)");
-  assert.strictEqual(uploadFileName_('all_subscription_1001.csv', '0930'), 'pipedrive_up(1001).xlsx');
-  assert.strictEqual(uploadFileName_('all_subscription_004141.csv', '0930'), 'pipedrive_up(0930).xlsx');
 });
 
-test('요약 문구에 단계별 수치가 들어간다', () => {
-  const lines = summaryLines_({
+test('요약 문구에 단계별 수치와 업로드 결과가 들어간다', () => {
+  const base = {
     fileName: 'all_subscription_1001.csv', fileUpdated: '2026-09-30 10:23',
     counts: { total: 100, orders: 50, review: 1, site: 2, pro: 3, phone: 4, deal: 5, mapped: 6, noTarget: 7 },
-    targetCounts: { 업셀: 10, '업셀, 푸시': 8, 푸시: 4 }, cleanCount: 22, uploadCount: 20,
+    targetCounts: { 업셀: 10, '업셀, 푸시': 8, 푸시: 4 }, cleanCount: 22, suspectCount: 2,
     approvedApplied: 1, autoApplied: 6, autoFailed: 0, overLimit: false, pending: 3, elapsedSec: 42,
-  }).join('\n');
-  for (const s of ['원천 행 100', '-50', '(역매핑) -6', '결과 22곳', '업셀 10', '업로드 xlsx 20행', '자동 반영 6건', '승인 대기 3건', '42초']) {
+    upload: { total: 20, created: 18, failed: 1, skipped: 1, blocked: false, off: false },
+  };
+  const lines = summaryLines_(base).join('\n');
+  for (const s of ['원천 행 100', '-50', '(역매핑) -6', '결과 22곳', '업셀 10', 'Pipedrive 업로드 18/20건', '실패 1', '남음 1', '딜 의심 2곳', '자동 반영 6건', '승인 대기 3건', '42초']) {
     assert.ok(lines.indexOf(s) >= 0, s);
   }
+  const blocked = summaryLines_(Object.assign({}, base, { upload: { total: 600, created: 0, failed: 0, skipped: 0, blocked: true, off: false } })).join('\n');
+  assert.ok(blocked.indexOf('500곳 초과') >= 0);
+});
+
+test('업로드 ID 해석: 소유자·단계·라벨 이름 → id, 없으면 멈춘다', () => {
+  const ids = resolveUploadIds_({ 24324011: '한서연', 1: '김혜빈' }, { 71: '컨택전', 89: '라이트 ' }, { 299: '알파리뷰', 303: 'null' });
+  assert.deepStrictEqual(ids, { ownerId: 24324011, stageId: 71, labelIds: { 알파리뷰: 299, null: 303 } });
+  assert.throws(() => resolveUploadIds_({ 1: '김혜빈' }, { 71: '컨택전' }, {}), /소유자 '한서연'/);
+  assert.throws(() => resolveUploadIds_({ 24324011: '한서연' }, { 89: '라이트' }, {}), /단계 '컨택전'/);
+});
+
+test('업로드 계획: 끔·상한 초과면 한 건도 올리지 않는다', () => {
+  const items = [{ row: 1 }, { row: 2 }, { row: 3 }];
+  assert.deepStrictEqual(planUpload_(items, true, 3), { items: items, blocked: false, off: false });
+  assert.deepStrictEqual(planUpload_(items, true, 2), { items: [], blocked: true, off: false });
+  assert.deepStrictEqual(planUpload_(items, false, 100), { items: [], blocked: false, off: true });
+});
+
+test('업로드 결과를 clean 탭 업로드 열 값으로', () => {
+  const head = OUTPUT_HEADERS.slice();
+  const idx = head.indexOf('업로드');
+  const row = (v) => { const r = head.map(() => ''); r[idx] = v; return r; };
+  const cleanRows = [head, row(''), row('업로드 안 함(딜 의심)'), row(''), row('')];
+  const items = [{ row: 1 }, { row: 3 }, { row: 4 }];
+  const results = [{ id: 501 }, { error: '400 bad', warn: '' }, { skipped: true }];
+  assert.deepStrictEqual(uploadColumn_(cleanRows, items, results, { blocked: false, off: false }),
+    [['501'], ['업로드 안 함(딜 의심)'], ['실패: 400 bad'], ['남음(시간 초과) — PQL 생성을 다시 누르면 이어서 올라감']]);
+  assert.deepStrictEqual(uploadColumn_(cleanRows, [], [], { blocked: true, off: false })[0], ['업로드 안 함(대상 500곳 초과)']);
+  assert.deepStrictEqual(uploadColumn_(cleanRows, [], [], { blocked: false, off: true })[0], ['업로드 꺼짐']);
+  assert.deepStrictEqual(uploadColumn_(cleanRows, [{ row: 1 }], [{ id: 7, warn: '담당자 생성 실패' }], { blocked: false, off: false })[0], ['7 (담당자 생성 실패)']);
 });

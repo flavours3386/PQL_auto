@@ -80,17 +80,48 @@ test('서비스 라벨', () => {
   assert.strictEqual(serviceLabel_(rec({ '알파리뷰 상태': '제거중' })), '');
 });
 
-test('clean 행 33열, 타겟·라벨·딜 의심 위치', () => {
-  const row = cleanRow_(rec(), ['업셀', '푸시'], '알파리뷰', ['77', '88']);
-  assert.strictEqual(row.length, 33);
-  assert.deepStrictEqual(row.slice(0, 8), ['몰', '1', 'm1', 'cafe24', '610', '업셀, 푸시', '알파리뷰', '77, 88']);
-  assert.strictEqual(row[11], '010-1234-5678');
-  assert.strictEqual(row[14], '서울 1층');
+test('clean 행 34열, 타겟·라벨·딜 의심·업로드 위치', () => {
+  const row = cleanRow_(rec(), ['업셀', '푸시'], '알파리뷰', ['77', '88'], '업로드 안 함(딜 의심)');
+  assert.strictEqual(row.length, 34);
+  assert.deepStrictEqual(row.slice(0, 9), ['몰', '1', 'm1', 'cafe24', '610', '업셀, 푸시', '알파리뷰', '77, 88', '업로드 안 함(딜 의심)']);
+  assert.strictEqual(row[12], '010-1234-5678');
+  assert.strictEqual(row[15], '서울 1층');
 });
 
-// shop_id는 Pipedrive 텍스트 필드라 문자열로 쓴다 (숫자로 쓰면 Google xlsx 내보내기가 '1.0'으로 적어 다음 달 매칭이 깨진다)
-test('업로드 행 15열 = 0901 양식', () => {
-  assert.deepStrictEqual(uploadRow_(rec(), '알파리뷰'), [
-    '몰', '1', 'm1', 'cafe24', 600, '한서연', '컨택전', '알파리뷰', '둘째회사', '홍길동', '몰', '010-1234-5678', 'a@b.com', 'mall.com', '서울 1층',
-  ]);
+const IDS = { ownerId: 24324011, stageId: 71, labelIds: { 알파리뷰: 299, 알파업셀: 300, 알파푸시: 301, null: 303 } };
+
+// 0901 가져오기로 만든 딜과 같은 배치 (딜 필드·담당자·조직)
+test('업로드 재료: 딜·담당자·조직', () => {
+  const it = uploadItem_(rec(), '알파리뷰, 알파푸시', IDS, 5);
+  assert.strictEqual(it.row, 5);
+  assert.deepStrictEqual(it.org, { name: '둘째회사', address: '서울 1층' });
+  assert.deepStrictEqual(it.person, { name: '홍길동', email: 'a@b.com', phone: '010-1234-5678' });
+  assert.deepStrictEqual(it.deal, {
+    title: '몰', owner_id: 24324011, pipeline_id: 9, stage_id: 71, label_ids: [299, 301],
+    custom_fields: {
+      [PD_FIELD_SHOP_ID]: '1', [PD_FIELD_MALL_ID]: 'm1', [PD_FIELD_HOSTING]: 388, [PD_FIELD_MONTHLY_ORDERS]: 600,
+      [PD_FIELD_MALL_NAME]: '몰', [PD_FIELD_URL]: 'mall.com',
+    },
+  });
+});
+
+test('업로드 재료: 빈 값은 빼고, 라벨 null·빈 라벨·아임웹 처리', () => {
+  const it = uploadItem_(rec({ 플랫폼: 'imweb', 대표도메인: '', 담당자명: '', 담당자이메일: '' }), 'null', IDS, 1);
+  assert.deepStrictEqual(it.deal.label_ids, [303]);
+  assert.strictEqual(it.deal.custom_fields[PD_FIELD_HOSTING], 389);
+  assert.ok(!(PD_FIELD_URL in it.deal.custom_fields));
+  assert.strictEqual(it.person.name, '몰'); // 담당자명이 없으면 shop_name
+  assert.deepStrictEqual(personPayload_(it.person, 7), { name: '몰', org_id: 7, phones: [{ value: '010-1234-5678', primary: true, label: 'work' }] });
+  assert.deepStrictEqual(uploadItem_(rec(), '', IDS, 1).deal.label_ids, []);
+});
+
+test('조직·딜 요청 본문', () => {
+  assert.deepStrictEqual(orgPayload_({ name: '회사', address: '서울' }), { name: '회사', address: { value: '서울' } });
+  assert.deepStrictEqual(orgPayload_({ name: '회사', address: '' }), { name: '회사' });
+  const it = uploadItem_(rec(), '알파리뷰', IDS, 1);
+  const d = dealPayload_(it, 11, 22);
+  assert.strictEqual(d.person_id, 11);
+  assert.strictEqual(d.org_id, 22);
+  assert.ok(!('person_id' in dealPayload_(it, null, 22)));
+  assert.ok(!('person_id' in it.deal)); // 원본 재료는 건드리지 않는다
 });

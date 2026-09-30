@@ -200,24 +200,100 @@ function serviceLabel_(r) {
 
 /* ---------- 출력 행 ---------- */
 
-function cleanRow_(r, targets, label, suspectDealIds) {
+function cleanRow_(r, targets, label, suspectDealIds, uploadNote) {
   return OUTPUT_HEADERS.map(function (h) {
     if (h === '타겟') return targets.join(', ');
     if (h === '서비스 라벨') return label;
     if (h === '딜 의심') return suspectDealIds.join(', ');
+    if (h === '업로드') return uploadNote;
     if (h === '담당자전화번호') return r.phone;
     if (h === '주소') return r.address;
     return r.get(h);
   });
 }
 
-// Pipedrive 가져오기 양식 (pipedrive_up(0901).xlsx와 같은 15열). shop_id는 Pipedrive 텍스트 필드라 문자열, 월 주문 수는 숫자 필드라 숫자
-function uploadRow_(r, label) {
-  return [
-    r.get('shop_name'), r.shopId, r.get('mall_id'), r.get('플랫폼'), toNumberOr_(r.ordersRaw),
-    DEAL_OWNER, DEAL_STAGE, label, r.get('회사명'), r.get('담당자명'), r.get('쇼핑몰명'),
-    r.phone, r.get('담당자이메일'), r.get('대표도메인'), r.address,
-  ];
+/* ---------- Pipedrive 업로드 ---------- */
+
+// 0901 가져오기로 만든 딜과 같은 배치: 딜(필드) · 담당자(이름·이메일·전화) · 조직(이름·주소)
+function uploadItem_(r, label, ids, row) {
+  const title = r.get('shop_name');
+  const cf = {};
+  const put = function (k, v) { if (v !== '' && v != null) cf[k] = v; };
+  put(PD_FIELD_SHOP_ID, r.shopId); // 텍스트 필드
+  put(PD_FIELD_MALL_ID, r.get('mall_id'));
+  put(PD_FIELD_HOSTING, PD_HOSTING_OPTION[r.platform] || PD_HOSTING_OTHER);
+  put(PD_FIELD_MONTHLY_ORDERS, r.orders); // 숫자 필드
+  put(PD_FIELD_MALL_NAME, r.get('쇼핑몰명'));
+  put(PD_FIELD_URL, r.get('대표도메인'));
+  const labelIds = label ? label.split(', ').map(function (n) { return ids.labelIds[n]; }).filter(function (id) { return id !== undefined; }) : [];
+  return {
+    row: row,
+    shopId: r.shopId,
+    org: { name: r.get('회사명') || title, address: r.address },
+    person: { name: r.get('담당자명') || title, email: r.get('담당자이메일'), phone: r.phone },
+    deal: { title: title, owner_id: ids.ownerId, pipeline_id: SALES_PIPELINE_ID, stage_id: ids.stageId, label_ids: labelIds, custom_fields: cf },
+  };
+}
+
+function orgPayload_(org) {
+  const p = { name: org.name };
+  if (org.address) p.address = { value: org.address };
+  return p;
+}
+
+function personPayload_(person, orgId) {
+  const p = { name: person.name };
+  if (orgId) p.org_id = orgId;
+  if (person.email) p.emails = [{ value: person.email, primary: true, label: 'work' }];
+  if (person.phone) p.phones = [{ value: person.phone, primary: true, label: 'work' }];
+  return p;
+}
+
+function dealPayload_(item, personId, orgId) {
+  const d = Object.assign({}, item.deal);
+  if (personId) d.person_id = personId;
+  if (orgId) d.org_id = orgId;
+  return d;
+}
+
+// 소유자·단계·라벨 이름을 id로. 소유자·단계를 못 찾으면 딜을 엉뚱하게 만들지 않도록 멈춘다.
+function resolveUploadIds_(users, stages, labels) {
+  const find = function (map, name) {
+    return Object.keys(map).filter(function (id) { return String(map[id]).trim() === name; })[0];
+  };
+  const owner = find(users, DEAL_OWNER);
+  if (owner === undefined) throw new Error("Pipedrive에서 소유자 '" + DEAL_OWNER + "'를 찾지 못했습니다");
+  const stage = find(stages, DEAL_STAGE);
+  if (stage === undefined) throw new Error("Sales 파이프라인에서 단계 '" + DEAL_STAGE + "'를 찾지 못했습니다");
+  const labelIds = {};
+  Object.keys(labels).forEach(function (id) { labelIds[labels[id]] = Number(id); });
+  return { ownerId: Number(owner), stageId: Number(stage), labelIds: labelIds };
+}
+
+function planUpload_(items, autoUpload, max) {
+  if (!autoUpload) return { items: [], blocked: false, off: true };
+  if (items.length > max) return { items: [], blocked: true, off: false };
+  return { items: items, blocked: false, off: false };
+}
+
+// clean 탭 '업로드' 열 값 (데이터 행 순서). 업로드 대상이 아니었던 행은 빌더가 적은 값을 둔다.
+function uploadColumn_(cleanRows, items, results, plan) {
+  const idx = OUTPUT_HEADERS.indexOf('업로드');
+  const col = cleanRows.slice(1).map(function (r) {
+    if (r[idx] !== '') return [r[idx]];
+    if (plan.blocked) return ['업로드 안 함(대상 ' + UPLOAD_MAX + '곳 초과)'];
+    if (plan.off) return ['업로드 꺼짐'];
+    return [''];
+  });
+  items.forEach(function (it, k) {
+    const res = results[k] || {};
+    let v;
+    if (res.id) v = String(res.id) + (res.warn ? ' (' + res.warn + ')' : '');
+    else if (res.skipped) v = '남음(시간 초과) — PQL 생성을 다시 누르면 이어서 올라감';
+    else v = '실패: ' + (res.error || '알 수 없음');
+    col[it.row - 1] = [v];
+  });
+  return col;
 }
 
 /* ---------- shop_id 역매핑 ---------- */
@@ -429,11 +505,13 @@ function mappingNote_(source, raw, shopId, keys, today) {
   return '[PQL ' + source + '매핑 ' + today + "] shop_id '" + raw + "' → " + shopId + ' (근거: ' + keys.join(', ') + ')';
 }
 
-/* ---------- 파일명·요약 ---------- */
+/* ---------- 요약 ---------- */
 
-function uploadFileName_(csvName, fallbackMmdd) {
-  const m = /^all_subscription_(\d{4})\.csv$/i.exec(csvName);
-  return 'pipedrive_up(' + (m ? m[1] : fallbackMmdd) + ').xlsx';
+function uploadLine_(u) {
+  if (u.off) return 'Pipedrive 업로드 꺼짐';
+  if (u.blocked) return 'Pipedrive 업로드 안 함 — 대상 ' + u.total + '곳이 ' + UPLOAD_MAX + '곳 초과(원천 확인 필요)';
+  return 'Pipedrive 업로드 ' + u.created + '/' + u.total + '건' + (u.failed ? ' · 실패 ' + u.failed : '') +
+    (u.skipped ? ' · 남음 ' + u.skipped + ' (다시 누르면 이어서)' : '');
 }
 
 function summaryLines_(s) {
@@ -453,7 +531,7 @@ function summaryLines_(s) {
     '⑥ Sales 딜 있음(역매핑) -' + c.mapped,
     '타겟 해당 없음 -' + c.noTarget,
     '결과 ' + s.cleanCount + '곳 (' + t + ')',
-    '업로드 xlsx ' + s.uploadCount + '행 (딜 의심 ' + (s.cleanCount - s.uploadCount) + '곳 제외)',
+    uploadLine_(s.upload) + ' · 딜 의심 ' + s.suspectCount + '곳은 올리지 않음',
     '승인 매핑 반영 ' + s.approvedApplied + '건',
     auto,
     '승인 대기 ' + s.pending + "건 → '" + TAB_MAPPING + "' 탭",
@@ -497,7 +575,7 @@ function createPqlBuilder_(opts) {
         }
       });
       const cleanRows = [OUTPUT_HEADERS];
-      const uploadRows = [UPLOAD_HEADERS];
+      const uploadItems = [];
       const targetCounts = {};
       kept.forEach(function (r) {
         if (mapped.has(r.shopId)) {
@@ -511,12 +589,12 @@ function createPqlBuilder_(opts) {
         }
         const label = serviceLabel_(r);
         const sus = suspect[r.shopId] || [];
-        cleanRows.push(cleanRow_(r, targets, label, sus));
-        if (!sus.length) uploadRows.push(uploadRow_(r, label));
+        cleanRows.push(cleanRow_(r, targets, label, sus, sus.length ? '업로드 안 함(딜 의심)' : ''));
+        if (!sus.length) uploadItems.push(uploadItem_(r, label, opts.uploadIds, cleanRows.length - 1));
         const key = targets.join(', ');
         targetCounts[key] = (targetCounts[key] || 0) + 1;
       });
-      return { cleanRows: cleanRows, uploadRows: uploadRows, matches: matches, counts: counts, targetCounts: targetCounts };
+      return { cleanRows: cleanRows, uploadItems: uploadItems, matches: matches, counts: counts, targetCounts: targetCounts };
     },
   };
 }

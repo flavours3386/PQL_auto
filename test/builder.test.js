@@ -11,8 +11,10 @@ const row = (id, o) => {
   return H.map((h) => v[h]);
 };
 
+const IDS = { ownerId: 24324011, stageId: 71, labelIds: { 알파리뷰: 299, 알파업셀: 300, 알파푸시: 301, null: 303 } };
+
 function build(rows, opts) {
-  const b = createPqlBuilder_(Object.assign({ dealShopIds: new Set(), unmappedDeals: [], rejectedPairs: new Set() }, opts || {}));
+  const b = createPqlBuilder_(Object.assign({ dealShopIds: new Set(), unmappedDeals: [], rejectedPairs: new Set(), uploadIds: IDS }, opts || {}));
   [H].concat(rows).forEach((r) => b.onRow(r));
   return b.finish();
 }
@@ -37,17 +39,19 @@ test('단계별 탈락·역매핑 제외·딜 의심·타겟 집계', () => {
   assert.deepStrictEqual(out.counts, { total: 9, orders: 1, review: 1, site: 0, pro: 0, phone: 1, deal: 1, mapped: 1, noTarget: 2 });
   assert.deepStrictEqual(out.cleanRows.slice(1).map((r) => r[1]), ['6', '9']);
   assert.strictEqual(out.cleanRows[1][7], '901');
-  assert.deepStrictEqual(out.uploadRows.slice(1).map((r) => r[1]), ['9']);
+  assert.strictEqual(out.cleanRows[1][8], '업로드 안 함(딜 의심)');
+  assert.strictEqual(out.cleanRows[2][8], '');
+  assert.deepStrictEqual(out.uploadItems.map((it) => [it.row, it.shopId, it.deal.title]), [[2, '9', '몰9']]);
   assert.deepStrictEqual(out.targetCounts, { '업셀, 푸시': 1, 업셀: 1 });
   assert.deepStrictEqual(out.matches.map((m) => m.tier), ['high', 'review']);
 });
 
 test('필수 열이 없으면 없는 열 이름을 모두 띄우고 멈춘다', () => {
-  const b = createPqlBuilder_({ dealShopIds: new Set(), unmappedDeals: [], rejectedPairs: new Set() });
+  const b = createPqlBuilder_({ dealShopIds: new Set(), unmappedDeals: [], rejectedPairs: new Set(), uploadIds: IDS });
   assert.throws(() => b.onRow(H.filter((h) => h !== '알파업셀 상태' && h !== '담당자명')), /필수 열이 없습니다: 알파업셀 상태, 담당자명/);
 });
 
 test('빈 CSV는 멈춘다', () => {
-  const b = createPqlBuilder_({ dealShopIds: new Set(), unmappedDeals: [], rejectedPairs: new Set() });
+  const b = createPqlBuilder_({ dealShopIds: new Set(), unmappedDeals: [], rejectedPairs: new Set(), uploadIds: IDS });
   assert.throws(() => b.finish(), /CSV가 비어 있습니다/);
 });
