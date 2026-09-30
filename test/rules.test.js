@@ -64,6 +64,16 @@ test('타겟: 푸시는 cafe24·주문 500 이상·라이브 아님(무료 포�
   assert.deepStrictEqual(matchTargets_(rec()), ['업셀', '푸시']);
 });
 
+test('타겟: 리뷰는 주문 1,000건 이상·리뷰 라이브 아님, 아임웹 포함', () => {
+  const others = { '알파업셀 상태': '라이브(과금중)', '알파푸시 상태': '라이브(무료구독중)' };
+  const r = (o) => matchTargets_(rec(Object.assign({}, others, o)));
+  assert.deepStrictEqual(r({ '알파리뷰 상태': '구독없음', '최근 30일 플랫폼 주문수': '1000' }), ['리뷰']);
+  assert.deepStrictEqual(r({ '알파리뷰 상태': '구독없음', '최근 30일 플랫폼 주문수': '999' }), []);
+  assert.deepStrictEqual(r({ '알파리뷰 상태': '프로덕트온보딩중', '최근 30일 플랫폼 주문수': '1500', 플랫폼: 'imweb' }), ['리뷰']);
+  assert.deepStrictEqual(r({ '알파리뷰 상태': '라이브(무료구독중)', '최근 30일 플랫폼 주문수': '1500' }), []);
+  assert.deepStrictEqual(matchTargets_(rec({ '알파리뷰 상태': '구독없음', '최근 30일 플랫폼 주문수': '1200' })), ['업셀', '푸시', '리뷰']);
+});
+
 test('서비스 라벨', () => {
   assert.strictEqual(serviceLabel_(rec({ '알파리뷰 상태': '구독없음' })), 'null');
   assert.strictEqual(serviceLabel_(rec({ '알파업셀 상태': '라이브(과금중)', '알파푸시 상태': '라이브(무료구독중)' })), '알파리뷰, 알파업셀, 알파푸시');

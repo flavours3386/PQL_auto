@@ -7,6 +7,7 @@ const DOWNLOAD_CHUNK_BYTES = 20 * 1024 * 1024; // UrlFetch 응답 한도 50MB/�
 
 const MIN_ORDERS = 100;
 const PUSH_MIN_ORDERS = 500;
+const REVIEW_MIN_ORDERS = 1000;
 
 const SALES_PIPELINE_ID = 9;
 const PD_FIELD_SHOP_ID = '9d4ea1fcf0bde157910e96a2e0354e76c220e6c8';
@@ -34,6 +35,8 @@ const TARGETS = [
   { name: '업셀', test: (r) => r.platform === 'cafe24' && !isLive_(r.upsell) && r.upsell !== '제거중' },
   // 푸시 무료(카페24 PRO 번들)도 라이브로 본다 — 세 제품이 모두 라이브인 몰은 올리지 않는다
   { name: '푸시', test: (r) => r.platform === 'cafe24' && r.orders >= PUSH_MIN_ORDERS && !isLive_(r.push) && r.push !== '제거중' },
+  // 리뷰는 아임웹도 지원한다 (플랫폼 조건 없음)
+  { name: '리뷰', test: (r) => r.orders >= REVIEW_MIN_ORDERS && !isLive_(r.review) && r.review !== '제거중' },
 ];
 
 const REQUIRED_COLUMNS = ['shop_id', '플랫폼', '최근 30일 플랫폼 주문수', '알파리뷰 상태', '알파업셀 상태', '알파푸시 상태', '사이트 상태', '담당자명', '담당자전화번호'];
