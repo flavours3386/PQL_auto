@@ -1794,3 +1794,14 @@ gh pr create --title "[refactor] PQL 파이프라인 재구축 (CSV 직접 처�
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 머지는 4단계 리뷰 통과 기록이 PR에 남은 뒤에만 한다.
+
+---
+
+### Task 7b: Pipedrive 자동 업로드 (2026-09-30 추가, xlsx 대체)
+
+사용자 결정: 업로드는 `PQL 생성` 때 자동. 0901 가져오기와 같은 배치로 조직(같은 이름 재사용, 없으면 생성·주소) → 담당자(이름·이메일·전화) → 딜(제목=shop_name, 소유자 한서연 24324011, Sales/컨택전 71, 라벨, shop_id·상점아이디·호스팅사·월 주문 수·쇼핑몰명·URL)을 만든다. xlsx는 수동 가져오기와 겹치면 딜이 중복되므로 만들지 않는다.
+
+- 안전장치: 대상 500곳 초과면 전부 보류(`UPLOAD_MAX`), 실행 5분 경과 시 중단(`UPLOAD_TIME_BUDGET_SEC`, 남은 곳은 다음 실행에서 이어짐), `딜 의심` 행 제외, 결과(딜 ID·실패 사유)를 clean 탭 `업로드` 열에 기록
+- Core(순수, 테스트): `resolveUploadIds_`, `uploadItem_`, `orgPayload_`, `personPayload_`, `dealPayload_`, `planUpload_`, `uploadColumn_`, 빌더 `uploadItems`, `summaryLines_` 업로드 문구 / 제거: `uploadRow_`, `uploadFileName_`, `UPLOAD_HEADERS`
+- Io: `pdFetchAll_`(fetchAll + 429 개별 재시도), `pdCreateDeals_`(10곳씩 조직→담당자→딜), `writeUploadColumn_` / 제거: `exportUploadXlsx_`
+- 검증: node 테스트 → 테스트 시트에서 결과 중 2곳만 업로드(테스트 사본 전용 slice) → Pipedrive에서 필드 대조
