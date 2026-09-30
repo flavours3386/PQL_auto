@@ -137,6 +137,6 @@ function showSummary_(lines, xlsx) {
     return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
   };
   const html = '<div style="font:13px/1.7 sans-serif">' + lines.map(esc).join('<br>') +
-    '<p><a href="' + esc(xlsx.getDownloadUrl()) + '" target="_blank">' + esc(xlsx.getName()) + ' 다운로드</a></p></div>';
+    '<p><a href="' + esc(xlsx.getUrl()) + '" target="_blank">' + esc(xlsx.getName()) + ' 열기</a> (내 드라이브 · 열린 화면에서 다운로드)</p></div>';
   SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(480).setHeight(520), 'PQL 생성 완료');
 }
