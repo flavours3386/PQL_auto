@@ -10,6 +10,14 @@ function onOpen() {
     .addToUi();
 }
 
+// 두 실행이 겹치면 같은 몰 딜을 두 번 만들 수 있다. 스크립트 잠금을 못 얻으면 쓰기 전에 멈춘다.
+function acquireLock_() {
+  const lock = LockService.getScriptLock();
+  return lock.tryLock(5000) ? lock : null;
+}
+
+const LOCK_BUSY_MESSAGE = '다른 실행이 진행 중입니다. 끝난 뒤 다시 눌러 주세요.';
+
 function step_(name, fn) {
   try {
     return fn();
@@ -34,13 +42,11 @@ function applyApproved_(token, state, today) {
   split.apply.forEach(function (x) {
     const y = x.slice();
     try {
-      const cur = pdGetShopId_(token, y[0]);
-      if (/^\d+$/.test(cur)) y[8] = '실패: 이미 shop_id ' + cur;
-      else {
-        const warn = pdSetShopId_(token, y[0], y[3], mappingNote_('승인', y[2], y[3], String(y[5]).split(', '), today));
-        y[8] = warn ? '반영됨 (' + warn + ')' : '반영됨';
-        applied++;
-      }
+      const r = pdApplyShopId_(token, y[0], String(y[3]).trim(), y[2], function (cur) {
+        return mappingNote_('승인', cur, y[3], String(y[5]).split(', '), today);
+      });
+      y[8] = r.status;
+      if (r.applied) applied++;
     } catch (e) {
       y[8] = '실패: ' + e.message.slice(0, 80);
     }
@@ -51,17 +57,24 @@ function applyApproved_(token, state, today) {
   return state;
 }
 
-function autoApply_(token, matches, today) {
+// 높은 확신 역매핑을 반영한다. deadlineMs가 지나면 남은 건은 '대기'로 두어 다음 실행이 다시 판정한다.
+function autoApply_(token, matches, today, deadlineMs) {
   const overrides = {};
   const rows = [];
   let failed = 0;
   matches.forEach(function (m) {
     const c = m.candidates[0];
     let status;
+    if (Date.now() > deadlineMs) {
+      rows.push(mappingRow_(m, c, '높음', '', '대기', today));
+      return;
+    }
     try {
-      const warn = pdSetShopId_(token, m.deal.id, c.shopId, mappingNote_('자동', m.deal.raw, c.shopId, c.keys, today));
-      overrides[m.deal.id] = c.shopId;
-      status = warn ? '반영됨 (' + warn + ')' : '반영됨';
+      const r = pdApplyShopId_(token, m.deal.id, c.shopId, m.deal.raw, function (cur) {
+        return mappingNote_('자동', cur, c.shopId, c.keys, today);
+      });
+      if (r.applied) overrides[m.deal.id] = c.shopId;
+      status = r.status;
     } catch (e) {
       status = '실패: ' + e.message.slice(0, 80);
       failed++;
@@ -74,9 +87,15 @@ function autoApply_(token, matches, today) {
 function runPql() {
   const ui = SpreadsheetApp.getUi();
   const started = Date.now();
+  let lock = null;
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const token = pdToken_();
+    lock = acquireLock_();
+    if (!lock) {
+      ui.alert('PQL 생성', LOCK_BUSY_MESSAGE, ui.ButtonSet.OK);
+      return;
+    }
     const today = todayStr_('yyyy-MM-dd');
     const state = step_('승인 매핑 반영', function () { return applyApproved_(token, readMappingState_(readMappingRows_(ss)), today); });
     const pd = step_('Pipedrive 조회', function () { return fetchPipedrive_(token); });
@@ -87,7 +106,8 @@ function runPql() {
     const out = builder.finish();
 
     const plan = planMappings_(out.matches, AUTO_APPLY, AUTO_APPLY_MAX);
-    const auto = step_('shop_id 자동 반영', function () { return autoApply_(token, plan.auto, today); });
+    // 자동 반영은 업로드보다 먼저 끝나야 하므로 업로드 예산보다 1분 이르게 끊는다
+    const auto = step_('shop_id 자동 반영', function () { return autoApply_(token, plan.auto, today, started + (UPLOAD_TIME_BUDGET_SEC - 60) * 1000); });
     const pending = [];
     plan.pendingHigh.forEach(function (m) { pending.push(mappingRow_(m, m.candidates[0], '높음', '', '대기', today)); });
     plan.review.forEach(function (m) {
@@ -123,19 +143,29 @@ function runPql() {
     }).concat(['clean 탭: ' + cleanTab + ' (업로드 열에 딜 ID·실패 사유)']));
   } catch (e) {
     ui.alert('PQL 생성 실패', e.message, ui.ButtonSet.OK);
+  } finally {
+    if (lock) lock.releaseLock();
   }
 }
 
 function applyApprovedMappings() {
   const ui = SpreadsheetApp.getUi();
+  let lock = null;
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const token = pdToken_();
+    lock = acquireLock_();
+    if (!lock) {
+      ui.alert('승인된 shop_id 반영', LOCK_BUSY_MESSAGE, ui.ButtonSet.OK);
+      return;
+    }
     const state = applyApproved_(token, readMappingState_(readMappingRows_(ss)), todayStr_('yyyy-MM-dd'));
     writeMappingRows_(ss, state.pending.concat(state.keep));
     ui.alert('승인된 shop_id 반영', state.applied + '건 반영했습니다. 결과는 상태 열을 보세요.', ui.ButtonSet.OK);
   } catch (e) {
     ui.alert('반영 실패', e.message, ui.ButtonSet.OK);
+  } finally {
+    if (lock) lock.releaseLock();
   }
 }
 
