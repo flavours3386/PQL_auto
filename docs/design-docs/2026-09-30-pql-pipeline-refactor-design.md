@@ -1,8 +1,8 @@
 # PQL 파이프라인 재구축 설계
 
 - 작성: 2026-09-30
-- 상태: 승인·구현 완료(2026-09-30), 테스트 시트 검증 후 라이브 배포 대기
-- 대상: `pql_auto` Apps Script (scriptId `1bDdQ0oWl-rtXv7z1YNMfez8LhkHwhja0J9hvzo7KbVdCk19ofLYh1_dP`, 스프레드시트 `PQL_cleansing_auto`)
+- 상태: 구현·라이브 가동 완료(2026-09-30, 새 시트 `PQL_auto`에서 딜 194건 업로드)
+- 대상: `pql_auto` Apps Script (scriptId `1bDdQ0oWl-rtXv7z1YNMfez8LhkHwhja0J9hvzo7KbVdCk19ofLYh1_dP`, 스프레드시트 `PQL_cleansing_auto`) → 라이브 실행에서 이 문서가 무거워 시트 쓰기 타임아웃이 반복돼 새 시트 `PQL_auto`(scriptId `1y8duYMO…`)로 이전(CLAUDE.md 트러블슈팅)
 
 ## 1. 목적
 

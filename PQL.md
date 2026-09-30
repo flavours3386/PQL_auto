@@ -1,6 +1,6 @@
 # PQL 자동화 사용법
 
-코드는 `src/`에 있다(Apps Script 바운드 프로젝트 `pql_auto`, 시트 `PQL_cleansing_auto`). 이 문서에는 코드를 두지 않는다. 규칙과 흐름은 [ARCHITECTURE.md](ARCHITECTURE.md).
+코드는 `src/`에 있다(시트 `PQL_auto`의 바운드 스크립트, 2026-09-30 이전 시트 `PQL_cleansing_auto`에서 이전 — 이전 시트는 쓰지 않는다). 이 문서에는 코드를 두지 않는다. 규칙과 흐름은 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 월간 절차
 
