@@ -28,7 +28,7 @@ PQL_auto/
 │   ├── Core.js            # 순수 로직: CSV 스트리밍·클렌징·타겟·라벨·역매핑·업로드 재료·빌더
 │   ├── Io.js              # Drive·Pipedrive·Sheets I/O
 │   └── Main.js            # 메뉴·실행 흐름
-├── test/                  # gas.js(로더) + *.test.js
+├── test/                  # gas.js(로더) + *.test.js (io.test.js = 가짜 Pipedrive·시트로 쓰기 경로)
 ├── PQL.md                 # 사용법
 ├── ARCHITECTURE.md        # 흐름·규칙·제약
 ├── CHANGELOG.md           # 지난 세대 변경 기록
@@ -43,6 +43,7 @@ PQL_auto/
 - 공통 클렌징 ①~⑥ + 타겟 3종(업셀 cafe24·주문 150+·업셀 라이브 아님 / 푸시 cafe24·500+·푸시 라이브 아님 / 리뷰 1,000+·리뷰 라이브 아님). 라이브는 무료 포함 4종
 - Sales 딜 제외를 코드가 한다(수동 deal list·XLOOKUP 대체). shop_id가 빈칸·텍스트인 딜은 이메일·전화·이름·URL로 CSV와 대조해 키 2개 이상 일치 시 Pipedrive shop_id 자동 반영(노트로 원래 값 보존), 나머지는 `shop_id 매핑` 탭에서 승인/거절
 - 결과를 Pipedrive 딜로 자동 업로드(0901 수동 가져오기와 같은 필드 배치 + 세일즈티어). xlsx는 만들지 않는다(수동 가져오기와 겹치면 중복 딜)
+- 배포 전 Orca(Codex) 독립 리뷰에서 Critical 2·Important 7 수정: 실행 잠금, shop_id 쓰기 직전 재확인, 이메일+전화만으로 자동 반영 금지, 업로드 선행 실패 시 딜 보류, 시간 예산·429 상한, 필수 열 23개, shop_id 검증·중복 중단, 매핑 탭 쓰기 순서. 테스트 52개(가짜 Pipedrive·시트 포함)
 - 설계 = `docs/design-docs/2026-09-30-pql-pipeline-refactor-design.md`, 계획 = `docs/exec-plans/2026-09-30-pql-pipeline-refactor.md`
 
 ## 트러블슈팅
