@@ -269,11 +269,33 @@ function writeMappingRows_(ss, rows) {
   }
 }
 
-// 기존 테이블(표2) 범위를 넘는 행은 테이블 밖에 쓰인다. 제외 판정은 코드가 하므로 결과에는 영향 없다.
+// 시트 쓰기. 필요한 탭을 먼저 다 만들고, 탭을 하나 쓸 때마다 바로 반영(flush)한다.
+// 5천 행 쓰기가 반영되기 전에 탭을 추가하다 라이브 문서에서 '스프레드시트 서비스 타임아웃'이 세 번 났다(2026-09-30,
+// 같은 작업을 단계마다 flush하면 모두 3초 안). deal list는 참고용이라 실패해도 멈추지 않고 경고만 돌려준다.
+function writeOutputs_(ss, mappingRows, cleanRows, dealRows) {
+  const cleanName = CLEAN_TAB_PREFIX + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  [TAB_MAPPING, cleanName, TAB_DEAL_LIST].forEach(function (n) { if (!ss.getSheetByName(n)) ss.insertSheet(n); });
+  SpreadsheetApp.flush();
+  writeMappingRows_(ss, mappingRows);
+  SpreadsheetApp.flush();
+  writeCleanTab_(ss, cleanName, cleanRows);
+  SpreadsheetApp.flush();
+  let warn = '';
+  try {
+    writeDealList_(ss, dealRows);
+    SpreadsheetApp.flush();
+  } catch (e) {
+    warn = 'deal list 갱신 실패: ' + e.message;
+  }
+  return { cleanName: cleanName, warn: warn };
+}
+
+// 새 값을 먼저 쓰고 남는 아래 행만 지운다
 function writeDealList_(ss, rows) {
   const sh = ss.getSheetByName(TAB_DEAL_LIST) || ss.insertSheet(TAB_DEAL_LIST);
-  sh.getRange(1, 1, sh.getMaxRows(), 5).clearContent();
   sh.getRange(1, 1, rows.length, 5).setValues(rows);
+  const extra = sh.getLastRow() - rows.length;
+  if (extra > 0) sh.getRange(rows.length + 1, 1, extra, 5).clearContent();
 }
 
 function writeUploadColumn_(ss, tabName, col) {
@@ -281,9 +303,8 @@ function writeUploadColumn_(ss, tabName, col) {
   ss.getSheetByName(tabName).getRange(2, OUTPUT_HEADERS.indexOf('업로드') + 1, col.length, 1).setValues(col);
 }
 
-function writeCleanTab_(ss, rows) {
-  const name = CLEAN_TAB_PREFIX + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
-  const sh = ss.insertSheet(name);
+function writeCleanTab_(ss, name, rows) {
+  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
   const range = sh.getRange(1, 1, rows.length, rows[0].length);
   range.setNumberFormat('@'); // 전화·shop_id 앞자리 0과 날짜 오인 방지
   range.setValues(rows);

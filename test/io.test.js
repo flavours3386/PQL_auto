@@ -163,3 +163,54 @@ test('매핑 탭은 새 값을 먼저 쓰고 남는 아래 행만 지운다', ()
   assert.ok(vi >= 0 && ci > vi, JSON.stringify(ops));
   assert.deepStrictEqual(ops[ci], ['clear', 4, 47]);
 });
+
+// 라이브에서 5천 행 쓰기가 반영되기 전에 탭을 추가하다 '스프레드시트 서비스 타임아웃'이 세 번 났다(2026-09-30).
+// 진단에서는 단계마다 flush하면 모두 3초 안이었다 → 탭을 먼저 만들고, 탭마다 바로 반영한다. deal list는 참고용이라 실패해도 멈추지 않는다.
+function fakeSpreadsheet(opts) {
+  opts = opts || {};
+  const ops = [];
+  const sheets = {};
+  const makeSheet = (name) => ({
+    name: name,
+    getRange: () => ({
+      setNumberFormat: () => ops.push(['format', name]),
+      setValues: () => { if (opts.failValues === name) throw new Error('타임아웃'); ops.push(['values', name]); },
+      clearContent: () => ops.push(['clear', name]),
+      setFontWeight: () => {}, setDataValidation: () => {},
+    }),
+    getLastRow: () => 0, getMaxRows: () => 1000, setFrozenRows: () => {}, setColumnWidths: () => {},
+  });
+  (opts.existing || []).forEach((n) => { sheets[n] = makeSheet(n); });
+  global.SpreadsheetApp = {
+    flush: () => ops.push(['flush']),
+    newDataValidation: () => ({ requireValueInList: function () { return this; }, setAllowInvalid: function () { return this; }, build: () => ({}) }),
+  };
+  global.Utilities = { formatDate: () => '20261001_090000', sleep: () => {} };
+  global.Session = { getScriptTimeZone: () => 'Asia/Seoul' };
+  const ss = {
+    getSheetByName: (n) => sheets[n] || null,
+    insertSheet: (n) => { ops.push(['insert', n]); sheets[n] = makeSheet(n); return sheets[n]; },
+  };
+  return { ss: ss, ops: ops };
+}
+
+test('시트 쓰기: 탭을 먼저 다 만들고, 탭마다 바로 반영한다', () => {
+  const f = fakeSpreadsheet({ existing: ['deal list'] });
+  const out = writeOutputs_(f.ss, [['m']], [OUTPUT_HEADERS], [['d']]);
+  assert.strictEqual(out.cleanName, 'clean_20261001_090000');
+  assert.strictEqual(out.warn, '');
+  const firstValues = f.ops.findIndex((o) => o[0] === 'values');
+  const lastInsert = f.ops.map((o) => o[0]).lastIndexOf('insert');
+  assert.ok(lastInsert < firstValues, JSON.stringify(f.ops));
+  // 각 탭 쓰기 뒤에는 다음 탭 쓰기 전에 flush가 있다
+  const seq = f.ops.filter((o) => o[0] === 'values' || o[0] === 'flush').map((o) => o[0] === 'flush' ? 'F' : o[1]);
+  assert.deepStrictEqual(seq, ['F', 'shop_id 매핑', 'F', 'clean_20261001_090000', 'F', 'deal list', 'F']);
+});
+
+test('deal list 쓰기가 실패해도 매핑·clean은 남고 경고만 돌려준다', () => {
+  const f = fakeSpreadsheet({ failValues: 'deal list' });
+  const out = writeOutputs_(f.ss, [['m']], [OUTPUT_HEADERS], [['d']]);
+  assert.match(out.warn, /deal list 갱신 실패: 타임아웃/);
+  assert.ok(f.ops.some((o) => o[0] === 'values' && o[1] === 'shop_id 매핑'));
+  assert.ok(f.ops.some((o) => o[0] === 'values' && o[1] === 'clean_20261001_090000'));
+});

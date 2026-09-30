@@ -114,11 +114,10 @@ function runPql() {
       m.candidates.forEach(function (c) { pending.push(mappingRow_(m, c, '확인 필요', '', '대기', today)); });
     });
 
-    const cleanTab = step_('시트 쓰기', function () {
-      writeDealList_(ss, dealListRows_(pd.deals, pd.users, pd.stages, pd.labels, auto.overrides));
-      writeMappingRows_(ss, pending.concat(auto.rows, state.keep));
-      return writeCleanTab_(ss, out.cleanRows);
+    const outputs = step_('시트 쓰기', function () {
+      return writeOutputs_(ss, pending.concat(auto.rows, state.keep), out.cleanRows, dealListRows_(pd.deals, pd.users, pd.stages, pd.labels, auto.overrides));
     });
+    const cleanTab = outputs.cleanName;
     // 시트를 먼저 쓴 뒤 업로드한다: 업로드 도중 시간 한도에 걸려도 clean 탭은 남고, 올라간 곳은 다음 실행에서 딜로 빠진다
     const up = planUpload_(out.uploadItems, AUTO_UPLOAD, UPLOAD_MAX);
     const results = step_('Pipedrive 업로드', function () { return pdCreateDeals_(token, up.items, started + UPLOAD_TIME_BUDGET_SEC * 1000); });
@@ -140,7 +139,7 @@ function runPql() {
       overLimit: plan.overLimit,
       pending: pending.length,
       elapsedSec: Math.round((Date.now() - started) / 1000),
-    }).concat(['clean 탭: ' + cleanTab + ' (업로드 열에 딜 ID·실패 사유)']));
+    }).concat(['clean 탭: ' + cleanTab + ' (업로드 열에 딜 ID·실패 사유)']).concat(outputs.warn ? [outputs.warn] : []));
   } catch (e) {
     ui.alert('PQL 생성 실패', e.message, ui.ButtonSet.OK);
   } finally {
