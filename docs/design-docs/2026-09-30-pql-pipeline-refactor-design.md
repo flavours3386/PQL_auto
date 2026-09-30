@@ -64,7 +64,7 @@ Pipedrive 조회를 CSV보다 먼저 하는 이유: 매핑 안 된 딜 253건의
 
 | # | 제외 조건 |
 |---|---|
-| ① | `최근 30일 플랫폼 주문수`가 빈값이거나 100 미만 |
+| ① | `최근 30일 플랫폼 주문수`가 빈값·숫자 아님·100 미만 (현행은 숫자가 아닌 값을 통과시켰다. 10/1분에는 해당 값 0건) |
 | ② | `알파리뷰 상태` ∈ {제거중, 해지완료, 서비스중단} |
 | ③ | `사이트 상태` ∈ {구독종료, 해지완료, 계정활성화} |
 | ④ | `담당자명` = `프로`이고 정규화한 `담당자전화번호`가 010으로 시작하지 않음 |
@@ -163,7 +163,7 @@ Pipedrive 조회를 CSV보다 먼저 하는 이유: 매핑 안 된 딜 253건의
 ## 8. 코드 구조·배포
 
 - 코드 SSOT를 PQL.md 코드블록에서 `src/Code.js`로 옮긴다. `src/appsscript.json`, repo 루트 `.clasp.json`(`rootDir: src`)을 두고 clasp로 배포한다. PQL.md에는 사용법만 남긴다. 이번에 PQL.md와 라이브가 어긋난 원인을 없애기 위한 조치다
-- 파일은 `Code.js` 하나. 순수 함수(CSV 파서, UTF-8 분할 경계 계산, 클렌징·타겟·라벨, 역매핑 판정)는 I/O와 분리하고, 파일 끝의 `if (typeof module !== 'undefined') module.exports = {...}`로 node에서 불러 쓴다
+- `src/`를 책임별 4개 파일로 나눈다: `Config.js`(설정·타겟 규칙), `Core.js`(Apps Script 서비스를 쓰지 않는 순수 로직), `Io.js`(Drive·Pipedrive·Sheets), `Main.js`(메뉴·실행 흐름). Apps Script는 파일들을 한 전역 스코프로 합치므로, 테스트는 `test/gas.js`가 `Config.js`·`Core.js`를 같은 방식(`vm.runInThisContext`)으로 올려 쓴다
 - Advanced Service는 쓰지 않는다(Golden Principle 1). Drive·Pipedrive 모두 UrlFetch
 - 설정 상수: `MIN_ORDERS=100`, `PUSH_MIN_ORDERS=500`, `SALES_PIPELINE_ID=9`, shop_id·URL·쇼핑몰명 필드 키, `AUTO_APPLY=true`, `AUTO_APPLY_MAX=100`
 - Pipedrive 토큰은 Script Properties에만 둔다. 스크립트 편집 권한자는 열람할 수 있다
