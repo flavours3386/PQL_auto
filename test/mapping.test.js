@@ -107,3 +107,24 @@ test('업로드 결과를 clean 탭 업로드 열 값으로', () => {
   assert.deepStrictEqual(uploadColumn_(cleanRows, [], [], { blocked: false, off: true })[0], ['업로드 꺼짐']);
   assert.deepStrictEqual(uploadColumn_(cleanRows, [{ row: 1 }], [{ id: 7, warn: '담당자 생성 실패' }], { blocked: false, off: false })[0], ['7 (담당자 생성 실패)']);
 });
+
+// 업로드 이력: 실행마다 (타겟 × 세일즈티어)별 업로드 수와 전체 합계를 누적한다. 월 = 원천 파일 기준 PQL 월.
+test('PQL 월: 원천 파일 MM, 연도는 업로드일 기준(연말·연초 넘김 처리)', () => {
+  assert.strictEqual(pqlMonth_('all_subscription_1001.csv', '2026-09-30'), '2026-10');
+  assert.strictEqual(pqlMonth_('all_subscription_0101.csv', '2026-12-31'), '2027-01');
+  assert.strictEqual(pqlMonth_('all_subscription_1231.csv', '2027-01-02'), '2026-12');
+  assert.strictEqual(pqlMonth_('all_subscription_004141.csv', '2026-06-24'), '2026-06'); // MMDD가 아니면 업로드일의 달
+});
+
+test('업로드 이력 행: 실제 생성된 딜만, 타겟·세일즈티어 순으로 집계하고 전체 합계', () => {
+  const it = (target, tier) => ({ target: target, tier: tier });
+  const items = [it('업셀', '베이직'), it('업셀', '베이직'), it('업셀', '그로스'), it('푸시, 리뷰', '비즈니스'), it('업셀', '라이트')];
+  const results = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { error: 'x' }];
+  assert.deepStrictEqual(uploadSummaryRows_(items, results, '2026-10', '2026-09-30'), [
+    ['2026-10', '2026-09-30', '업셀', '베이직', 2],
+    ['2026-10', '2026-09-30', '업셀', '그로스', 1],
+    ['2026-10', '2026-09-30', '푸시, 리뷰', '비즈니스', 1],
+    ['2026-10', '2026-09-30', '전체', '전체', 4],
+  ]);
+  assert.deepStrictEqual(uploadSummaryRows_(items, items.map(() => ({ skipped: true })), '2026-10', '2026-09-30'), []);
+});

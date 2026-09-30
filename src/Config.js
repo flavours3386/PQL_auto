@@ -49,6 +49,7 @@ const UPLOAD_BATCH = 10; // 동시 요청 묶음 크기
 const TAB_DEAL_LIST = 'deal list';
 const TAB_MAPPING = 'shop_id 매핑';
 const CLEAN_TAB_PREFIX = 'clean_';
+const TAB_HISTORY = '업로드 이력'; // 실행마다 (타겟 × 세일즈티어)별 업로드 수를 누적
 
 // 상태값은 공백을 뺀 형태로 적는다 (비교 전에 원천 값의 공백도 뺀다)
 const REVIEW_EXCLUDE = new Set(['제거중', '해지완료', '서비스중단']);
@@ -78,4 +79,5 @@ const OUTPUT_HEADERS = [
   '최근 30일 플랫폼 주문수', '최근 30일 전체 주문수', '설치시점 플랫폼 주문수(API)',
   '최근 30일 UV(방문자수)', '최근 30일 PV(페이지뷰)', '임직원 수', '이메일', '사업자', '고객센터', '전화번호', '담당자직책', '결제담당이메일',
 ];
+const HISTORY_HEADERS = ['월', '업로드일', '타겟', '세일즈티어', '업로드 수'];
 const MAPPING_HEADERS = ['딜 ID', '딜 이름', '원래 shop_id', '후보 shop_id', '후보 shop_name', '일치 키', '신뢰도', '판정', '상태', '기록일'];

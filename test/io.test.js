@@ -247,3 +247,26 @@ test('딜 조회는 사용자 필드 3개만 요청하고 필요한 값만 남�
   assert.deepStrictEqual([...r.dealShopIds], ['101']);
   assert.deepStrictEqual(r.unmappedDeals.map((d) => [d.id, d.raw, d.keys.email]), [[2, '채널톡', ['e102@x.com']], [3, '', ['e103@x.com']]]);
 });
+
+test('업로드 이력 탭: 비어 있으면 헤더를 쓰고, 마지막 행 아래에 이어 붙인다', () => {
+  const ops = [];
+  let lastRow = 0;
+  const sheet = {
+    getRange: (r, c, nr, nc) => ({
+      setValues: (v) => { ops.push(['values', r, v.length]); lastRow = Math.max(lastRow, r + v.length - 1); return { setFontWeight: () => {} }; },
+      setNumberFormat: () => ops.push(['format', r]),
+      setFontWeight: () => {},
+    }),
+    getLastRow: () => lastRow, setFrozenRows: () => {},
+  };
+  const sheets = {};
+  global.SpreadsheetApp = { flush: () => ops.push(['flush']) };
+  const ss = { getSheetByName: (n) => sheets[n] || null, insertSheet: (n) => { ops.push(['insert', n]); sheets[n] = sheet; return sheet; } };
+  appendUploadHistory_(ss, [['2026-10', '2026-09-30', '업셀', '베이직', 2], ['2026-10', '2026-09-30', '전체', '전체', 2]]);
+  appendUploadHistory_(ss, [['2026-11', '2026-10-31', '전체', '전체', 5]]);
+  assert.deepStrictEqual(ops.filter((o) => o[0] !== 'format'), [
+    ['insert', '업로드 이력'], ['values', 1, 1], ['values', 2, 2], ['flush'], ['values', 4, 1], ['flush'],
+  ]);
+  appendUploadHistory_(ss, []); // 올린 게 없으면 아무것도 쓰지 않는다
+  assert.strictEqual(ops.filter((o) => o[0] === 'values').length, 3);
+});
