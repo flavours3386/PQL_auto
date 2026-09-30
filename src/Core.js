@@ -329,3 +329,120 @@ function createDealMatcher_(unmappedDeals) {
     },
   };
 }
+
+/* ---------- Pipedrive 데이터 가공 ---------- */
+
+function splitDeals_(deals) {
+  const shopIds = new Set();
+  const unmapped = [];
+  deals.forEach(function (d) {
+    const v = rawShopId_(d);
+    if (/^\d+$/.test(v)) shopIds.add(v);
+    else unmapped.push(d);
+  });
+  return { shopIds: shopIds, unmapped: unmapped };
+}
+
+function dealListRows_(deals, users, stages, labels, overrides) {
+  const rows = [['거래 - 레이블', '거래 - shop_id', '거래 - 이름', '거래 - 소유자', '거래 - 단계']];
+  deals.forEach(function (d) {
+    const shop = overrides[d.id] !== undefined ? String(overrides[d.id]) : rawShopId_(d);
+    const lab = (d.label_ids || []).slice().sort(function (a, b) { return a - b; })
+      .map(function (id) { return labels[id] || String(id); }).join(', ');
+    rows.push([lab, toNumberOr_(shop), d.title || '', users[d.owner_id] || '', stages[d.stage_id] || '']);
+  });
+  return rows;
+}
+
+/* ---------- shop_id 매핑 탭 ---------- */
+
+// 열: 0 딜 ID, 1 딜 이름, 2 원래 shop_id, 3 후보 shop_id, 4 후보 shop_name, 5 일치 키, 6 신뢰도, 7 판정, 8 상태, 9 기록일
+function readMappingState_(rows) {
+  const approved = [];
+  const pending = [];
+  const keep = [];
+  const rejectedPairs = new Set();
+  rows.forEach(function (x) {
+    const dealId = String(x[0]).trim();
+    if (!dealId) return;
+    const pair = dealId + ':' + String(x[3]).trim();
+    const verdict = String(x[7]).trim();
+    const status = String(x[8]).trim();
+    if (status === '대기' && verdict === '승인') approved.push(x);
+    else if (status === '대기' && verdict === '거절') {
+      const y = x.slice();
+      y[8] = '거절됨';
+      keep.push(y);
+      rejectedPairs.add(pair);
+    } else if (status === '대기') pending.push(x);
+    else {
+      if (status === '거절됨') rejectedPairs.add(pair);
+      keep.push(x); // 반영됨·거절됨·실패는 누적
+    }
+  });
+  return { approved: approved, pending: pending, rejectedPairs: rejectedPairs, keep: keep };
+}
+
+function splitApprovals_(approved) {
+  const byDeal = {};
+  approved.forEach(function (x) {
+    const id = String(x[0]).trim();
+    (byDeal[id] = byDeal[id] || []).push(x);
+  });
+  const apply = [];
+  const duplicate = [];
+  Object.keys(byDeal).forEach(function (id) {
+    const g = byDeal[id];
+    if (g.length === 1) apply.push(g[0]);
+    else g.forEach(function (x) { duplicate.push(x); });
+  });
+  return { apply: apply, duplicate: duplicate };
+}
+
+function planMappings_(matches, autoApply, autoMax) {
+  const high = matches.filter(function (m) { return m.tier === 'high'; });
+  const review = matches.filter(function (m) { return m.tier === 'review'; });
+  const overLimit = autoApply && high.length > autoMax;
+  const auto = autoApply && !overLimit ? high : [];
+  return { auto: auto, pendingHigh: auto.length ? [] : high, review: review, overLimit: overLimit };
+}
+
+function mappingRow_(m, cand, confidence, verdict, status, today) {
+  return [String(m.deal.id), m.deal.title, m.deal.raw, cand.shopId, cand.shopName, cand.keys.join(', '), confidence, verdict, status, today];
+}
+
+function mappingNote_(source, raw, shopId, keys, today) {
+  return '[PQL ' + source + '매핑 ' + today + "] shop_id '" + raw + "' → " + shopId + ' (근거: ' + keys.join(', ') + ')';
+}
+
+/* ---------- 파일명·요약 ---------- */
+
+function uploadFileName_(csvName, fallbackMmdd) {
+  const m = /^all_subscription_(\d{4})\.csv$/i.exec(csvName);
+  return 'pipedrive_up(' + (m ? m[1] : fallbackMmdd) + ').xlsx';
+}
+
+function summaryLines_(s) {
+  const c = s.counts;
+  const t = Object.keys(s.targetCounts).sort().map(function (k) { return k + ' ' + s.targetCounts[k]; }).join(' / ');
+  const auto = 'shop_id 자동 반영 ' + s.autoApplied + '건' + (s.autoFailed ? ' (실패 ' + s.autoFailed + ')' : '') +
+    (s.overLimit ? ' — ' + AUTO_APPLY_MAX + '건 초과라 자동 반영을 멈추고 전부 대기로 돌림' : '');
+  return [
+    '원천: ' + s.fileName + ' (수정 ' + s.fileUpdated + ')',
+    '원천 행 ' + c.total,
+    '① 주문수 100 미만·빈값 -' + c.orders,
+    '② 알파리뷰 제거중·해지완료·서비스중단 -' + c.review,
+    '③ 사이트 구독종료·해지완료·계정활성화 -' + c.site,
+    '④ 프로 담당자 + 비핸드폰 -' + c.pro,
+    '⑤ 담당자 전화 없음 -' + c.phone,
+    '⑥ Sales 딜 있음(shop_id) -' + c.deal,
+    '⑥ Sales 딜 있음(역매핑) -' + c.mapped,
+    '타겟 해당 없음 -' + c.noTarget,
+    '결과 ' + s.cleanCount + '곳 (' + t + ')',
+    '업로드 xlsx ' + s.uploadCount + '행 (딜 의심 ' + (s.cleanCount - s.uploadCount) + '곳 제외)',
+    '승인 매핑 반영 ' + s.approvedApplied + '건',
+    auto,
+    '승인 대기 ' + s.pending + "건 → '" + TAB_MAPPING + "' 탭",
+    '소요 ' + s.elapsedSec + '초',
+  ];
+}
