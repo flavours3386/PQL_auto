@@ -100,7 +100,7 @@ test('업로드 재료: 딜·담당자·조직', () => {
     title: '몰', owner_id: 24324011, pipeline_id: 9, stage_id: 71, label_ids: [299, 301],
     custom_fields: {
       [PD_FIELD_SHOP_ID]: '1', [PD_FIELD_MALL_ID]: 'm1', [PD_FIELD_HOSTING]: 388, [PD_FIELD_MONTHLY_ORDERS]: 600,
-      [PD_FIELD_MALL_NAME]: '몰', [PD_FIELD_URL]: 'mall.com',
+      [PD_FIELD_MALL_NAME]: '몰', [PD_FIELD_URL]: 'mall.com', [PD_FIELD_SALES_TIER]: 234,
     },
   });
 });
@@ -113,6 +113,32 @@ test('업로드 재료: 빈 값은 빼고, 라벨 null·빈 라벨·아임웹 �
   assert.strictEqual(it.person.name, '몰'); // 담당자명이 없으면 shop_name
   assert.deepStrictEqual(personPayload_(it.person, 7), { name: '몰', org_id: 7, phones: [{ value: '010-1234-5678', primary: true, label: 'work' }] });
   assert.deepStrictEqual(uploadItem_(rec(), '', IDS, 1).deal.label_ids, []);
+});
+
+// 플랜이 선택지 이름이면 그대로, '-'·빈값·모르는 값이면 월 주문수 구간(상한 이하)으로 판정
+test('세일즈티어: 플랜 우선, 없으면 주문수 구간', () => {
+  const t = (plan, orders) => { const x = salesTier_(plan, orders); return x && x.name; };
+  assert.strictEqual(t('베이직', 5000), '베이직');
+  assert.strictEqual(t(' 엔터프라이즈6 ', 10), '엔터프라이즈6');
+  assert.strictEqual(t('-', 100), '라이트');
+  assert.strictEqual(t('-', 101), '베이직');
+  assert.strictEqual(t('-', 1000), '베이직');
+  assert.strictEqual(t('-', 1001), '그로스');
+  assert.strictEqual(t('', 5000), '비즈니스');
+  assert.strictEqual(t('-', 8195), '엔터프라이즈2');
+  assert.strictEqual(t('-', 50000), '엔터프라이즈5');
+  assert.strictEqual(t('-', 50001), '엔터프라이즈6');
+  assert.strictEqual(t('모르는값', 150), '베이직');
+  assert.strictEqual(salesTier_('-', NaN), null);
+  assert.strictEqual(salesTier_('엔터프라이즈1', 1).id, 237);
+});
+
+test('업로드 재료: 세일즈티어는 CSV 플랜 열을 쓴다', () => {
+  const H2 = H.concat(['플랜']);
+  const hi2 = headerIndex_(H2);
+  const row = H2.map((h) => (BASE[h] === undefined ? '' : BASE[h]));
+  row[H2.length - 1] = '엔터프라이즈3';
+  assert.strictEqual(uploadItem_(toRecord_(row, hi2), '', IDS, 1).deal.custom_fields[PD_FIELD_SALES_TIER], 239);
 });
 
 test('조직·딜 요청 본문', () => {

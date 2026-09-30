@@ -225,6 +225,8 @@ function uploadItem_(r, label, ids, row) {
   put(PD_FIELD_MONTHLY_ORDERS, r.orders); // 숫자 필드
   put(PD_FIELD_MALL_NAME, r.get('쇼핑몰명'));
   put(PD_FIELD_URL, r.get('대표도메인'));
+  const tier = salesTier_(r.get('플랜'), r.orders);
+  if (tier) put(PD_FIELD_SALES_TIER, tier.id);
   const labelIds = label ? label.split(', ').map(function (n) { return ids.labelIds[n]; }).filter(function (id) { return id !== undefined; }) : [];
   return {
     row: row,
@@ -233,6 +235,15 @@ function uploadItem_(r, label, ids, row) {
     person: { name: r.get('담당자명') || title, email: r.get('담당자이메일'), phone: r.phone },
     deal: { title: title, owner_id: ids.ownerId, pipeline_id: SALES_PIPELINE_ID, stage_id: ids.stageId, label_ids: labelIds, custom_fields: cf },
   };
+}
+
+// 세일즈티어: CSV 플랜이 선택지 이름이면 그대로, '-'·빈값·모르는 값이면 월 주문수 구간으로
+function salesTier_(plan, orders) {
+  const p = String(plan == null ? '' : plan).trim();
+  const byName = SALES_TIERS.filter(function (t) { return t.name === p; })[0];
+  if (byName) return byName;
+  if (!(orders >= 0)) return null;
+  return SALES_TIERS.filter(function (t) { return orders <= t.max; })[0];
 }
 
 function orgPayload_(org) {

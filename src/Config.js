@@ -18,6 +18,20 @@ const PD_FIELD_HOSTING = 'c65eb46e55631cc8b7967d1cda485a9f7aae72ef'; // 호스�
 const PD_FIELD_MONTHLY_ORDERS = '49e25aa8c079f6a979383c7ab188e0405cb743e3'; // 월 주문 수
 const PD_HOSTING_OPTION = { cafe24: 388, imweb: 389 }; // 호스팅사 선택지 id
 const PD_HOSTING_OTHER = 393; // 기타
+const PD_FIELD_SALES_TIER = '70526e4b5ca55cd1a1e3aedd0b192bfa78de9d6f'; // 세일즈티어 (선택형)
+// 세일즈티어 선택지 id와 월 주문수 상한. CSV 플랜이 '-'면 주문수가 상한 이하인 첫 구간으로 판정한다.
+const SALES_TIERS = [
+  { name: '라이트', id: 233, max: 100 },
+  { name: '베이직', id: 234, max: 1000 },
+  { name: '그로스', id: 235, max: 2000 },
+  { name: '비즈니스', id: 236, max: 5000 },
+  { name: '엔터프라이즈1', id: 237, max: 8000 },
+  { name: '엔터프라이즈2', id: 238, max: 10000 },
+  { name: '엔터프라이즈3', id: 239, max: 20000 },
+  { name: '엔터프라이즈4', id: 240, max: 30000 },
+  { name: '엔터프라이즈5', id: 241, max: 50000 },
+  { name: '엔터프라이즈6', id: 427, max: Infinity },
+];
 const PD_TOKEN_PROPERTY = 'PIPEDRIVE_API_TOKEN';
 
 const AUTO_APPLY = true; // 높은 확신 역매핑을 Pipedrive에 자동 반영
