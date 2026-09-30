@@ -27,6 +27,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 흐름·규칙·Pipedrive 쓰기·제약 |
 | [PQL.md](PQL.md) | 사용법 (월간 절차·요약 문구·설정·배포) |
 | [CHANGELOG.md](CHANGELOG.md) | 지난 세대 변경 |
+| [HANDOFF.md](HANDOFF.md) | 다음 세션 인계 (최신 항목이 위) |
 | [docs/design-docs/](docs/design-docs/) | 설계(spec) |
 | [docs/exec-plans/](docs/exec-plans/) | 구현 계획 |
 | [docs/PLANS.md](docs/PLANS.md) | 우선순위·기술 부채 |

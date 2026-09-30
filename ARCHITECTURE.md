@@ -4,14 +4,14 @@
 
 ```
 0. shop_id 매핑 탭의 '승인' 대기 행 → Pipedrive shop_id 반영
-1. Pipedrive: Sales(9) 딜 전체 · 소유자·단계·라벨 이름표
+1. Pipedrive: Sales(9) 딜 전체 · 소유자·단계·라벨 이름표 (사용자 필드는 shop_id·URL·쇼핑몰명 3개만 요청하고 받자마자 필요한 값만 남긴다 — 94개째 들고 있으면 32.7MB)
    └ shop_id가 숫자가 아닌 딜 → 담당자·조직 조회 → 대조 키(이메일·전화·이름·URL) 역색인
 2. Drive '05. PQL'에서 최신 all_subscription_*.csv (읽기만)
 3. 20MB Range 조각으로 받아 스트리밍 파서로 1회 순회
    행마다: 역매핑 대조 → 공통 클렌징 ①~⑥(숫자 shop_id 딜 제외)
 4. 역매핑 판정: 키 2개+ 일치 → Pipedrive shop_id 자동 반영 + ⑥ 제외 / 나머지 → 매핑 탭 대기, 결과에 '딜 의심'
 5. 타겟 판정(업셀·푸시·리뷰 중 하나라도) → 결과
-6. 시트 쓰기: deal list, shop_id 매핑, clean_{시각}
+6. 시트 쓰기(`writeOutputs_`): 탭(매핑·clean·deal list)을 먼저 만들고 매핑 → clean → deal list 순으로 탭마다 flush. deal list는 참고용이라 실패해도 계속
 7. Pipedrive 업로드: 결과(딜 의심 제외)마다 조직 → 담당자 → 딜, clean 탭 '업로드' 열에 딜 ID
    └ '업로드 이력' 탭에 (타겟 × 세일즈티어)별 업로드 수 + 전체 합계를 이어 붙임 (월 = 원천 파일 MM)
 8. 요약 창
