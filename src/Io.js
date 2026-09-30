@@ -37,24 +37,24 @@ function pdRequest_(token, method, path, body, deadlineMs) {
   }
 }
 
-// v2 cursor 페이지네이션
-function pdList_(token, path) {
+// v2 cursor 페이지네이션. map을 주면 페이지마다 바로 줄여서 담는다(원본 객체를 쌓아 두지 않는다).
+function pdList_(token, path, map) {
   const out = [];
   let cursor = '';
   do {
     const res = pdRequest_(token, 'get', path + (path.indexOf('?') < 0 ? '?' : '&') + 'limit=500' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''));
-    (res.data || []).forEach(function (x) { out.push(x); });
+    (res.data || []).forEach(function (x) { out.push(map ? map(x) : x); });
     cursor = (res.additional_data && res.additional_data.next_cursor) || '';
   } while (cursor);
   return out;
 }
 
-// v2 persons·organizations를 id 100개씩 조회
+// v2 persons·organizations를 id 100개씩 조회. 역매핑에 쓰는 이름·이메일·전화만 남긴다.
 function pdByIds_(token, entity, ids) {
   const out = {};
   for (let i = 0; i < ids.length; i += 100) {
     const res = pdRequest_(token, 'get', '/api/v2/' + entity + '?ids=' + ids.slice(i, i + 100).join(',') + '&limit=100');
-    (res.data || []).forEach(function (x) { out[x.id] = x; });
+    (res.data || []).forEach(function (x) { out[x.id] = { name: x.name, emails: x.emails, phones: x.phones }; });
   }
   return out;
 }
@@ -64,7 +64,7 @@ function uniqueIds_(arr) {
 }
 
 function fetchPipedrive_(token) {
-  const deals = pdList_(token, '/api/v2/deals?pipeline_id=' + SALES_PIPELINE_ID);
+  const deals = pdList_(token, '/api/v2/deals?pipeline_id=' + SALES_PIPELINE_ID + '&custom_fields=' + PD_DEAL_CUSTOM_FIELDS.join(','), slimDeal_);
   const split = splitDeals_(deals);
   const persons = pdByIds_(token, 'persons', uniqueIds_(split.unmapped.map(function (d) { return d.person_id; })));
   const orgs = pdByIds_(token, 'organizations', uniqueIds_(split.unmapped.map(function (d) { return d.org_id; })));

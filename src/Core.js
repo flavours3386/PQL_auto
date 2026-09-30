@@ -435,6 +435,17 @@ function createDealMatcher_(unmappedDeals) {
 
 /* ---------- Pipedrive 데이터 가공 ---------- */
 
+const PD_DEAL_CUSTOM_FIELDS = [PD_FIELD_SHOP_ID, PD_FIELD_URL, PD_FIELD_MALL_NAME];
+
+// 딜에서 쓰는 값만 남긴다. 사용자 필드 94개를 통째로 들고 있으면(Sales 5,476건 응답 32.7MB) 메모리 압박으로
+// 시트 쓰기가 타임아웃됐다(2026-09-30).
+function slimDeal_(d) {
+  const cf = d.custom_fields || {};
+  const keep = {};
+  PD_DEAL_CUSTOM_FIELDS.forEach(function (k) { if (cf[k] != null) keep[k] = cf[k]; });
+  return { id: d.id, title: d.title, owner_id: d.owner_id, stage_id: d.stage_id, label_ids: d.label_ids, person_id: d.person_id, org_id: d.org_id, custom_fields: keep };
+}
+
 function splitDeals_(deals) {
   const shopIds = new Set();
   const unmapped = [];

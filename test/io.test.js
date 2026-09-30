@@ -34,6 +34,19 @@ function fakePipedrive(opts) {
       return respond(200, { data: { id: Number(idOf()) } });
     }
     if (route === 'POST /api/v1/notes') { db.notes.push(body); return respond(201, { data: { id: 1 } }); }
+    if (route === 'GET /api/v2/deals') {
+      const all = opts.listDeals || [];
+      const start = Number((/cursor=(\d+)/.exec(path) || [0, 0])[1]);
+      const page = all.slice(start, start + 2);
+      return respond(200, { data: page, additional_data: { next_cursor: start + 2 < all.length ? String(start + 2) : null } });
+    }
+    if (route === 'GET /api/v2/persons' || route === 'GET /api/v2/organizations') {
+      const ids = decodeURIComponent(/ids=([^&]*)/.exec(path)[1]).split(',').map(Number);
+      return respond(200, { data: ids.map((id) => ({ id: id, name: 'n' + id, emails: [{ value: 'e' + id + '@x.com' }], phones: [], extra: 'x'.repeat(50) })) });
+    }
+    if (route === 'GET /api/v1/users') return respond(200, { data: [{ id: 24324011, name: '한서연' }] });
+    if (route === 'GET /api/v1/stages') return respond(200, { data: [{ id: 71, name: '컨택전' }] });
+    if (route === 'GET /api/v1/dealFields') return respond(200, { data: [{ key: 'label', options: [{ id: 299, label: '알파리뷰' }] }] });
     return respond(404, { error: 'no route ' + route });
   }
   global.UrlFetchApp = {
@@ -213,4 +226,24 @@ test('deal list 쓰기가 실패해도 매핑·clean은 남고 경고만 돌려�
   assert.match(out.warn, /deal list 갱신 실패: 타임아웃/);
   assert.ok(f.ops.some((o) => o[0] === 'values' && o[1] === 'shop_id 매핑'));
   assert.ok(f.ops.some((o) => o[0] === 'values' && o[1] === 'clean_20261001_090000'));
+});
+
+// 라이브에서 Sales 딜 5,476건을 사용자 필드 94개째 들고 있으니(응답 32.7MB) 메모리 압박으로 시트 쓰기가 타임아웃됐다(2026-09-30).
+// 참조를 놓자 같은 쓰기가 1~2초 → 딜은 쓰는 사용자 필드 3개만 요청하고, 받자마자 쓰는 값만 남긴다.
+test('딜 조회는 사용자 필드 3개만 요청하고 필요한 값만 남긴다', () => {
+  const big = {}; for (let i = 0; i < 90; i++) big['k' + i] = 'v'.repeat(100);
+  const deal = (id, shop) => ({ id: id, title: 't' + id, owner_id: 24324011, stage_id: 71, label_ids: [299], person_id: id + 100, org_id: null,
+    status: 'open', value: 0, add_time: 'x', custom_fields: Object.assign({ [PD_FIELD_SHOP_ID]: shop, [PD_FIELD_URL]: 'u.com', [PD_FIELD_MALL_NAME]: 'm' }, big) });
+  const pd = fakePipedrive({ listDeals: [deal(1, '101'), deal(2, '채널톡'), deal(3, '')] });
+  const r = fetchPipedrive_('t');
+  const listCalls = pd.calls.filter((c) => c.route === 'GET /api/v2/deals');
+  assert.strictEqual(listCalls.length, 2);
+  listCalls.forEach((c) => {
+    const cf = decodeURIComponent(/custom_fields=([^&]*)/.exec(c.path)[1]).split(',').sort();
+    assert.deepStrictEqual(cf, [PD_FIELD_SHOP_ID, PD_FIELD_URL, PD_FIELD_MALL_NAME].sort());
+  });
+  assert.deepStrictEqual(Object.keys(r.deals[0]).sort(), ['custom_fields', 'id', 'label_ids', 'org_id', 'owner_id', 'person_id', 'stage_id', 'title']);
+  assert.deepStrictEqual(Object.keys(r.deals[0].custom_fields).sort(), [PD_FIELD_SHOP_ID, PD_FIELD_URL, PD_FIELD_MALL_NAME].sort());
+  assert.deepStrictEqual([...r.dealShopIds], ['101']);
+  assert.deepStrictEqual(r.unmappedDeals.map((d) => [d.id, d.raw, d.keys.email]), [[2, '채널톡', ['e102@x.com']], [3, '', ['e103@x.com']]]);
 });

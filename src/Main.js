@@ -101,9 +101,12 @@ function runPql() {
     const pd = step_('Pipedrive 조회', function () { return fetchPipedrive_(token); });
     const file = step_('CSV 찾기', findLatestCsv_);
     const uploadIds = step_('업로드 설정 확인', function () { return resolveUploadIds_(pd.users, pd.stages, pd.labels); });
-    const builder = createPqlBuilder_({ dealShopIds: pd.dealShopIds, unmappedDeals: pd.unmappedDeals, rejectedPairs: state.rejectedPairs, uploadIds: uploadIds });
-    step_('CSV 읽기', function () { streamCsvFile_(file, builder.onRow); });
-    const out = builder.finish();
+    // 빌더(CSV 처리 중간 상태)는 이 함수 안에서만 살아 있게 해 끝나면 메모리에서 놓아 준다
+    const out = step_('CSV 읽기', function () {
+      const builder = createPqlBuilder_({ dealShopIds: pd.dealShopIds, unmappedDeals: pd.unmappedDeals, rejectedPairs: state.rejectedPairs, uploadIds: uploadIds });
+      streamCsvFile_(file, builder.onRow);
+      return builder.finish();
+    });
 
     const plan = planMappings_(out.matches, AUTO_APPLY, AUTO_APPLY_MAX);
     // 자동 반영은 업로드보다 먼저 끝나야 하므로 업로드 예산보다 1분 이르게 끊는다
