@@ -205,3 +205,127 @@ function uploadRow_(r, label) {
     r.phone, r.get('담당자이메일'), r.get('대표도메인'), r.address,
   ];
 }
+
+/* ---------- shop_id 역매핑 ---------- */
+
+const MATCH_KEYS = ['email', 'phone', 'name', 'url'];
+
+function emailKey_(raw) {
+  const s = String(raw == null ? '' : raw).trim().toLowerCase();
+  return s.indexOf('@') > 0 ? s : '';
+}
+
+function phoneKey_(raw) {
+  const d = normalizePhone_(raw).digits;
+  return d.length >= 9 ? d : '';
+}
+
+function nameKey_(raw) {
+  const s = String(raw == null ? '' : raw).replace(/\(주\)|주식회사|㈜/g, '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
+  return s.length >= 2 ? s : '';
+}
+
+function domainKey_(raw) {
+  let s = String(raw == null ? '' : raw).trim().toLowerCase().replace(/^[a-z]+:\/\//, '');
+  s = s.split('/')[0].split('?')[0].split(':')[0].replace(/^(www|m)\./, '');
+  return s.indexOf('.') > 0 ? s : '';
+}
+
+// 딜 쪽 URL 값: 도메인이면 도메인, 영숫자만이면 mall_id로 보고 cafe24 기본 도메인
+function dealUrlKey_(raw) {
+  const d = domainKey_(raw);
+  if (d) return d;
+  const s = String(raw == null ? '' : raw).trim().toLowerCase();
+  return /^[a-z0-9]+$/.test(s) ? s + '.cafe24.com' : '';
+}
+
+function rawShopId_(deal) {
+  const v = ((deal && deal.custom_fields) || {})[PD_FIELD_SHOP_ID];
+  return v == null ? '' : String(v).trim();
+}
+
+function pushKey_(arr, v) {
+  if (v && arr.indexOf(v) < 0) arr.push(v);
+}
+
+function dealMatchKeys_(deal, person, org) {
+  const cf = deal.custom_fields || {};
+  const keys = { email: [], phone: [], name: [], url: [] };
+  ((person && person.emails) || []).forEach(function (e) { pushKey_(keys.email, emailKey_(e.value)); });
+  ((person && person.phones) || []).forEach(function (p) { pushKey_(keys.phone, phoneKey_(p.value)); });
+  [deal.title, org && org.name, cf[PD_FIELD_MALL_NAME]].forEach(function (v) { pushKey_(keys.name, nameKey_(v)); });
+  pushKey_(keys.url, dealUrlKey_(cf[PD_FIELD_URL]));
+  pushKey_(keys.url, dealUrlKey_(rawShopId_(deal)));
+  return keys;
+}
+
+function rowMatchKeys_(row, hi) {
+  const vals = function (name) { return (hi.all[name] || []).map(function (i) { return row[i]; }); };
+  const keys = { email: [], phone: [], name: [], url: [] };
+  const add = function (key, cols, fn) {
+    cols.forEach(function (c) { vals(c).forEach(function (v) { pushKey_(keys[key], fn(v)); }); });
+  };
+  add('email', ['담당자이메일', '이메일', '결제담당이메일'], emailKey_);
+  add('phone', ['담당자전화번호', '전화번호', '고객센터'], phoneKey_);
+  add('name', ['shop_name', '쇼핑몰명', '회사명'], nameKey_);
+  add('url', ['대표도메인', '기본제공 도메인'], domainKey_);
+  add('url', ['mall_id'], function (v) {
+    const m = String(v == null ? '' : v).trim().toLowerCase();
+    return m ? m + '.cafe24.com' : '';
+  });
+  return keys;
+}
+
+// high: 걸린 키가 2개 이상이고 교집합이 shop 1개 / review: 그 밖에 후보가 있음 / none
+function classifyMatch_(hitsByKey) {
+  const keys = MATCH_KEYS.filter(function (k) { return hitsByKey[k] && hitsByKey[k].size; });
+  if (!keys.length) return { tier: 'none', candidates: [] };
+  const keysOf = function (id) { return keys.filter(function (k) { return hitsByKey[k].has(id); }); };
+  let inter = Array.from(hitsByKey[keys[0]]);
+  keys.slice(1).forEach(function (k) { inter = inter.filter(function (id) { return hitsByKey[k].has(id); }); });
+  if (keys.length >= 2 && inter.length === 1) return { tier: 'high', candidates: [{ shopId: inter[0], keys: keys }] };
+  const union = new Set();
+  keys.forEach(function (k) { hitsByKey[k].forEach(function (id) { union.add(id); }); });
+  return { tier: 'review', candidates: Array.from(union).sort().map(function (id) { return { shopId: id, keys: keysOf(id) }; }) };
+}
+
+// 매핑 안 된 딜 키를 역색인으로 만들고, CSV 행을 흘려 보내며 후보 shop을 모은다 (전체 CSV 색인은 만들지 않는다)
+function createDealMatcher_(unmappedDeals) {
+  const index = {};
+  unmappedDeals.forEach(function (d, pos) {
+    MATCH_KEYS.forEach(function (k) {
+      d.keys[k].forEach(function (v) { (index[k + ':' + v] = index[k + ':' + v] || []).push(pos); });
+    });
+  });
+  const hits = unmappedDeals.map(function () { return {}; });
+  const shopNames = {};
+  return {
+    onRow: function (row, hi, shopId, shopName) {
+      const keys = rowMatchKeys_(row, hi);
+      MATCH_KEYS.forEach(function (k) {
+        keys[k].forEach(function (v) {
+          (index[k + ':' + v] || []).forEach(function (pos) {
+            (hits[pos][k] = hits[pos][k] || new Set()).add(shopId);
+            shopNames[shopId] = shopName;
+          });
+        });
+      });
+    },
+    results: function (rejectedPairs) {
+      return unmappedDeals.map(function (d, pos) {
+        const h = {};
+        Object.keys(hits[pos]).forEach(function (k) {
+          const s = new Set();
+          hits[pos][k].forEach(function (id) { if (!rejectedPairs.has(d.id + ':' + id)) s.add(id); });
+          if (s.size) h[k] = s;
+        });
+        const c = classifyMatch_(h);
+        return {
+          deal: d,
+          tier: c.tier,
+          candidates: c.candidates.map(function (x) { return { shopId: x.shopId, keys: x.keys, shopName: shopNames[x.shopId] || '' }; }),
+        };
+      });
+    },
+  };
+}
