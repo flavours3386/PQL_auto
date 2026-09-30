@@ -377,14 +377,16 @@ function rowMatchKeys_(row, hi) {
   return keys;
 }
 
-// high: 걸린 키가 2개 이상이고 교집합이 shop 1개 / review: 그 밖에 후보가 있음 / none
+// high: 걸린 키가 2개 이상, 교집합이 shop 1개, 이름·URL 중 하나 포함 / review: 그 밖에 후보가 있음 / none
 function classifyMatch_(hitsByKey) {
   const keys = MATCH_KEYS.filter(function (k) { return hitsByKey[k] && hitsByKey[k].size; });
   if (!keys.length) return { tier: 'none', candidates: [] };
   const keysOf = function (id) { return keys.filter(function (k) { return hitsByKey[k].has(id); }); };
   let inter = Array.from(hitsByKey[keys[0]]);
   keys.slice(1).forEach(function (k) { inter = inter.filter(function (id) { return hitsByKey[k].has(id); }); });
-  if (keys.length >= 2 && inter.length === 1) return { tier: 'high', candidates: [{ shopId: inter[0], keys: keys }] };
+  // 이메일·전화는 한 운영사가 여러 몰에 공유하므로 이름·URL 중 하나는 있어야 자동 반영한다
+  const independent = keys.indexOf('name') >= 0 || keys.indexOf('url') >= 0;
+  if (keys.length >= 2 && inter.length === 1 && independent) return { tier: 'high', candidates: [{ shopId: inter[0], keys: keys }] };
   const union = new Set();
   keys.forEach(function (k) { hitsByKey[k].forEach(function (id) { union.add(id); }); });
   return { tier: 'review', candidates: Array.from(union).sort().map(function (id) { return { shopId: id, keys: keysOf(id) }; }) };
@@ -532,7 +534,7 @@ function summaryLines_(s) {
     (s.overLimit ? ' — ' + AUTO_APPLY_MAX + '건 초과라 자동 반영을 멈추고 전부 대기로 돌림' : '');
   return [
     '원천: ' + s.fileName + ' (수정 ' + s.fileUpdated + ')',
-    '원천 행 ' + c.total,
+    '원천 행 ' + c.total + (c.badId ? ' (shop_id 숫자 아님 ' + c.badId + '행 제외)' : ''),
     '① 주문수 100 미만·빈값 -' + c.orders,
     '② 알파리뷰 제거중·해지완료·서비스중단 -' + c.review,
     '③ 사이트 구독종료·해지완료·계정활성화 -' + c.site,
@@ -555,8 +557,9 @@ function summaryLines_(s) {
 // CSV 행을 받아 클렌징·역매핑 대조를 한 번에 하고, 끝나면 역매핑 제외·타겟 판정 후 출력 행을 만든다. 첫 행은 헤더.
 function createPqlBuilder_(opts) {
   const matcher = createDealMatcher_(opts.unmappedDeals);
-  const counts = { total: 0, orders: 0, review: 0, site: 0, pro: 0, phone: 0, deal: 0, mapped: 0, noTarget: 0 };
+  const counts = { total: 0, badId: 0, orders: 0, review: 0, site: 0, pro: 0, phone: 0, deal: 0, mapped: 0, noTarget: 0 };
   const kept = [];
+  const seen = new Set();
   let hi = null;
   return {
     onRow: function (row) {
@@ -569,6 +572,12 @@ function createPqlBuilder_(opts) {
       if (row.length === 1 && row[0] === '') return; // 빈 줄
       counts.total++;
       const r = toRecord_(row, hi);
+      if (!/^\d+$/.test(r.shopId)) {
+        counts.badId++;
+        return;
+      }
+      if (seen.has(r.shopId)) throw new Error('CSV에 같은 shop_id가 두 번 이상: ' + r.shopId + ' (원천 확인 필요, 아무것도 쓰지 않았습니다)');
+      seen.add(r.shopId);
       matcher.onRow(row, hi, r.shopId, r.get('shop_name'));
       const reason = cleanseReason_(r, opts.dealShopIds);
       if (reason) counts[reason]++;

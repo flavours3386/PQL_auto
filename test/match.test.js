@@ -44,6 +44,14 @@ test('판정: 장신몰형(전화 후보 2 ∩ 이름 1) → high', () => {
   assert.deepStrictEqual(c.candidates, [{ shopId: '126757', keys: ['phone', 'name'] }]);
 });
 
+// 리뷰 #8: 이메일·전화는 같은 운영사가 여러 몰에 공유하므로 둘만 일치하면 자동 반영하지 않는다 (이름·URL 중 하나 필요)
+test('판정: 이메일+전화만 일치하면 high가 아니라 review', () => {
+  assert.deepStrictEqual(classifyMatch_({ email: new Set(['A']), phone: new Set(['A']) }), {
+    tier: 'review', candidates: [{ shopId: 'A', keys: ['email', 'phone'] }],
+  });
+  assert.strictEqual(classifyMatch_({ email: new Set(['A']), url: new Set(['A']) }).tier, 'high');
+});
+
 test('판정: 키 1개 → review, 키끼리 다른 shop → review, 없음 → none', () => {
   assert.deepStrictEqual(classifyMatch_({ email: new Set(['1']) }), { tier: 'review', candidates: [{ shopId: '1', keys: ['email'] }] });
   assert.deepStrictEqual(classifyMatch_({ email: new Set(['1']), name: new Set(['2']) }), {
@@ -56,7 +64,7 @@ test('매처: CSV를 흘려 후보를 모으고, 거절한 쌍은 뺀다', () =>
   const H = ['shop_id', 'shop_name', '담당자이메일', '담당자전화번호'];
   const hi = headerIndex_(H);
   const deals = [
-    { id: 1, title: 'd1', raw: '채널톡', keys: { email: ['e@x.com'], phone: ['01011112222'], name: [], url: [] } },
+    { id: 1, title: 'd1', raw: '채널톡', keys: { email: ['e@x.com'], phone: ['01011112222'], name: ['몰10'], url: [] } },
     { id: 2, title: 'd2', raw: '', keys: { email: [], phone: [], name: ['같은이름'], url: [] } },
   ];
   const run = (rejected) => {
@@ -66,7 +74,7 @@ test('매처: CSV를 흘려 후보를 모으고, 거절한 쌍은 뺀다', () =>
   };
   const r = run(new Set());
   assert.strictEqual(r[0].tier, 'high');
-  assert.deepStrictEqual(r[0].candidates, [{ shopId: '10', keys: ['email', 'phone'], shopName: '몰10' }]);
+  assert.deepStrictEqual(r[0].candidates, [{ shopId: '10', keys: ['email', 'phone', 'name'], shopName: '몰10' }]);
   assert.strictEqual(r[1].tier, 'review');
   assert.deepStrictEqual(r[1].candidates.map((c) => c.shopId), ['20', '21']);
   assert.strictEqual(run(new Set(['1:10']))[0].tier, 'none');
