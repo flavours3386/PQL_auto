@@ -136,11 +136,8 @@ function exportUploadXlsx_(rows, fileName) {
   try {
     const sh = tmp.getSheets()[0];
     const range = sh.getRange(1, 1, rows.length, rows[0].length);
-    range.setNumberFormat('@'); // 전화번호 앞자리 0 보존
-    if (rows.length > 1) {
-      sh.getRange(2, 2, rows.length - 1, 1).setNumberFormat('0'); // shop_id
-      sh.getRange(2, 5, rows.length - 1, 1).setNumberFormat('0'); // 월 주문 수
-    }
+    range.setNumberFormat('@'); // 전화번호 앞자리 0, shop_id 텍스트 보존
+    if (rows.length > 1) sh.getRange(2, 5, rows.length - 1, 1).setNumberFormat('0'); // 월 주문 수 (Pipedrive 숫자 필드)
     range.setValues(rows);
     SpreadsheetApp.flush();
     const res = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx', {

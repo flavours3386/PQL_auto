@@ -37,7 +37,7 @@ test('단계별 탈락·역매핑 제외·딜 의심·타겟 집계', () => {
   assert.deepStrictEqual(out.counts, { total: 9, orders: 1, review: 1, site: 0, pro: 0, phone: 1, deal: 1, mapped: 1, noTarget: 2 });
   assert.deepStrictEqual(out.cleanRows.slice(1).map((r) => r[1]), ['6', '9']);
   assert.strictEqual(out.cleanRows[1][7], '901');
-  assert.deepStrictEqual(out.uploadRows.slice(1).map((r) => r[1]), [9]);
+  assert.deepStrictEqual(out.uploadRows.slice(1).map((r) => r[1]), ['9']);
   assert.deepStrictEqual(out.targetCounts, { '업셀, 푸시': 1, 업셀: 1 });
   assert.deepStrictEqual(out.matches.map((m) => m.tier), ['high', 'review']);
 });

@@ -210,10 +210,10 @@ function cleanRow_(r, targets, label, suspectDealIds) {
   });
 }
 
-// Pipedrive 가져오기 양식 (pipedrive_up(0901).xlsx와 같은 15열)
+// Pipedrive 가져오기 양식 (pipedrive_up(0901).xlsx와 같은 15열). shop_id는 Pipedrive 텍스트 필드라 문자열, 월 주문 수는 숫자 필드라 숫자
 function uploadRow_(r, label) {
   return [
-    r.get('shop_name'), toNumberOr_(r.shopId), r.get('mall_id'), r.get('플랫폼'), toNumberOr_(r.ordersRaw),
+    r.get('shop_name'), r.shopId, r.get('mall_id'), r.get('플랫폼'), toNumberOr_(r.ordersRaw),
     DEAL_OWNER, DEAL_STAGE, label, r.get('회사명'), r.get('담당자명'), r.get('쇼핑몰명'),
     r.phone, r.get('담당자이메일'), r.get('대표도메인'), r.address,
   ];
