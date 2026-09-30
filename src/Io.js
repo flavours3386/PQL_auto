@@ -114,15 +114,19 @@ function streamCsvFile_(file, onRow) {
   const parser = createCsvParser_(onRow);
   const token = ScriptApp.getOAuthToken();
   const url = 'https://www.googleapis.com/drive/v3/files/' + file.getId() + '?alt=media&supportsAllDrives=true';
-  streamChunks_(file.getSize(), DOWNLOAD_CHUNK_BYTES, function (start, end) {
+  const fetchRange = function (start, end) {
     const res = UrlFetchApp.fetch(url, {
       headers: { Authorization: 'Bearer ' + token, Range: 'bytes=' + start + '-' + end },
       muteHttpExceptions: true,
     });
     const code = res.getResponseCode();
     if (code !== 206 && code !== 200) throw new Error('CSV 다운로드 실패 ' + code + ': ' + res.getContentText().slice(0, 200));
-    return res.getContentText('UTF-8');
-  }, parser.feed);
+    return res;
+  };
+  const size = file.getSize();
+  const hasBom = size >= 3 && isUtf8Bom_(fetchRange(0, 2).getContent());
+  const fetchText = function (start, end) { return fetchRange(start, end).getContentText('UTF-8'); };
+  streamChunks_(size, DOWNLOAD_CHUNK_BYTES, restoreBom_(fetchText, hasBom), parser.feed);
   parser.end();
 }
 

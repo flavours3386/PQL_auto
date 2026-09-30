@@ -50,3 +50,27 @@ test('한 행이 분할 크기보다 크면 멈춘다', () => {
   const buf = Buffer.from('aaaaaaaaaa\nb\n');
   assert.throws(() => streamChunks_(buf.length, 4, (s, e) => buf.subarray(s, e + 1).toString(), () => {}), /분할 크기/);
 });
+
+test('디코더가 BOM을 지워도(Apps Script getContentText) restoreBom_로 감싸면 조각 경계가 밀리지 않는다', () => {
+  const body = 'a,b\n' + Array.from({ length: 50 }, (_, i) => i + ',"값' + i + '"').join('\n') + '\n';
+  const count = (csv, wrap) => {
+    const buf = Buffer.from(csv, 'utf8');
+    const strip = new TextDecoder('utf-8'); // 기본값: BOM 삭제
+    const fetch = (s, e) => strip.decode(buf.subarray(s, e + 1));
+    const rows = [];
+    const p = createCsvParser_((r) => rows.push(r));
+    streamChunks_(buf.length, 64, wrap ? wrap(fetch) : fetch, p.feed);
+    p.end();
+    return rows.length;
+  };
+  assert.notStrictEqual(count('﻿' + body), 51); // 감싸지 않으면 조각 행이 끼어든다 (재현)
+  assert.strictEqual(count('﻿' + body, (f) => restoreBom_(f, true)), 51);
+  assert.strictEqual(count(body, (f) => restoreBom_(f, false)), 51);
+});
+
+test('isUtf8Bom_: 부호 있는 바이트(Apps Script)와 없는 바이트 모두 판별', () => {
+  assert.strictEqual(isUtf8Bom_([-17, -69, -65]), true);
+  assert.strictEqual(isUtf8Bom_([0xef, 0xbb, 0xbf]), true);
+  assert.strictEqual(isUtf8Bom_([0x73, 0x68, 0x6f]), false);
+  assert.strictEqual(isUtf8Bom_([]), false);
+});

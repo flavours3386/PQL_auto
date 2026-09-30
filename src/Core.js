@@ -94,6 +94,19 @@ function streamChunks_(size, chunkBytes, fetchRange, onText) {
   }
 }
 
+// Apps Script getContentText는 UTF-8 BOM을 지운다. 첫 조각에 BOM을 되돌려야 바이트 오프셋이 3바이트 밀리지 않는다.
+function restoreBom_(fetchRange, hasBom) {
+  return function (start, end) {
+    const text = fetchRange(start, end);
+    return start === 0 && hasBom && text.charCodeAt(0) !== 0xfeff ? '﻿' + text : text;
+  };
+}
+
+// Apps Script getContent()는 부호 있는 바이트(-128~127)를 준다
+function isUtf8Bom_(bytes) {
+  return bytes.length >= 3 && (bytes[0] & 0xff) === 0xef && (bytes[1] & 0xff) === 0xbb && (bytes[2] & 0xff) === 0xbf;
+}
+
 /* ---------- 정규화 ---------- */
 
 function normStatus_(s) {
