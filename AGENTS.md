@@ -4,60 +4,38 @@
 
 ## Quick Start
 
-1. Google Sheets > 확장 프로그램 > Apps Script에 PQL.md의 코드 붙여넣기
-2. 스프레드시트 새로고침 후 메뉴 `PQL 자동화` 클릭
-3. `최신 파일 가져오기 & 가공 실행` 선택 (원스톱)
+1. `node --test 'test/*.test.js'` — 순수 로직 테스트
+2. `clasp push -f` — 라이브 배포 (`.clasp.json` rootDir: src). 토큰 만료 시 `! clasp login`
+3. 시트 메뉴 `PQL 자동화 > PQL 생성` (사람이 실행)
 
-```
-수동 단계별 실행:
-  (수동) 1. 최신 파일 가져오기  -> importLatestDataToRaw()
-  (수동) 2. 데이터 가공하기     -> createCleanSheetFromRaw()
-```
+라이브를 건드리지 않고 확인하려면 빈 스프레드시트에 `clasp create-script --type sheets`로 테스트 스크립트를 만들고, `AUTO_APPLY`·`AUTO_UPLOAD`를 `false`로 바꾼 사본을 올린다(생성 직후 `appsscript.json`이 기본값으로 덮어써지므로 저장소 것으로 되돌릴 것).
 
 ## Golden Principles
 
-1. **Advanced Drive Service를 사용하지 않는다** -- Google이 v2->v3 자동 업그레이드로 예고 없이 깨뜨린 전력이 있다. DriveApp + UrlFetchApp REST API 직접 호출 방식을 유지한다.
-2. **OUTPUT_HEADERS 순서가 곧 비즈니스 우선순위다** -- 중요 컬럼(shop_name, shop_id, mall_id, 플랫폼, 주문수, 서비스 라벨)이 맨 앞에 배치된다. 순서 변경 시 사용자 워크플로에 직접 영향.
-3. **필터링 조건은 Set.has()를 사용한다** -- O(n)인 Array.includes() 대신 O(1)인 Set.has()로 성능을 보장한다. 새 필터 조건 추가 시 이 패턴을 따를 것.
-4. **Sheets API 호출을 최소화한다** -- 현재 3회(setValues, setFontWeight, setColumnWidths)로 최적화되어 있다. autoResizeColumns, setNumberFormat 등 호출을 추가하지 말 것.
-5. **pipedrive_auto, pipedrive-dashboard와 Pipedrive 인스턴스를 공유한다** -- 직접적 API 연동은 없지만, PQL 리드 데이터는 Pipedrive 딜의 하류 데이터이므로 필드명/구조 변경 시 영향을 받는다.
-
-## Key Files
-
-```
-PQL_auto/
-├── CLAUDE.md                   # 프로젝트 문서
-├── AGENTS.md                   # 목차 + 핵심 원칙 (이 파일)
-├── ARCHITECTURE.md             # 데이터 흐름, 모듈 경계
-├── PQL.md                      # Apps Script 전체 코드 + 사용법
-├── docs/
-│   ├── PRODUCT_SENSE.md        # 제품 방향
-│   ├── PLANS.md                # 우선순위, 로드맵
-│   ├── design-docs/            # 설계 문서
-│   └── exec-plans/             # 실행 계획
-└── .gitignore
-```
+1. **Advanced Service를 쓰지 않는다** — Drive v2→v3 자동 전환으로 깨진 전력이 있다. Drive·Pipedrive 모두 UrlFetch REST.
+2. **원천 폴더 `05. PQL`에는 쓰지 않는다** — crema BQ 로더·alphareview-ref가 같은 폴더에서 최신 CSV를 읽는다.
+3. **순수 로직은 Core.js에, 테스트 먼저** — Apps Script 서비스를 쓰는 코드는 Io.js·Main.js로 격리한다.
+4. **시트 쓰기는 계산이 끝난 뒤, Pipedrive 업로드는 시트 쓰기 뒤** — 중간 실패로 반쯤 만든 탭이 남지 않고, 업로드가 끊겨도 다음 실행이 이어받는다.
+5. **Pipedrive 쓰기는 조건부** — 숫자 shop_id는 덮어쓰지 않는다. 자동 반영 100건·업로드 500곳 상한을 넘으면 멈춘다. 필드 키·단계·소유자는 `src/Config.js`에만 둔다.
+6. **예시·검증은 이번 결과 안의 몰로** — 필터 대상 몰을 견본으로 쓰지 않는다.
 
 ## Docs Map
 
-| 문서 | 용도 | 변경 빈도 |
-|------|------|-----------|
-| [CLAUDE.md](CLAUDE.md) | 프로젝트 개요, 기술 스택, 트러블슈팅 | 기능/필드 변경 시 |
-| [AGENTS.md](AGENTS.md) | 목차 + 핵심 원칙 (이 파일) | 구조 변경 시 |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 데이터 흐름, 처리 단계 | 로직 변경 시 |
-| [docs/PRODUCT_SENSE.md](docs/PRODUCT_SENSE.md) | 제품 방향, 사용자 | 분기별 |
-| [docs/PLANS.md](docs/PLANS.md) | 우선순위, 기술 부채 | 스프린트마다 |
-| [PQL.md](PQL.md) | Apps Script 전체 코드 + 변경 이력 | 코드 수정 시 |
+| 문서 | 용도 |
+|---|---|
+| [CLAUDE.md](CLAUDE.md) | 개요, 명령어, 최근 변경, 트러블슈팅 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 흐름·규칙·Pipedrive 쓰기·제약 |
+| [PQL.md](PQL.md) | 사용법 (월간 절차·요약 문구·설정·배포) |
+| [CHANGELOG.md](CHANGELOG.md) | 지난 세대 변경 |
+| [docs/design-docs/](docs/design-docs/) | 설계(spec) |
+| [docs/exec-plans/](docs/exec-plans/) | 구현 계획 |
+| [docs/PLANS.md](docs/PLANS.md) | 우선순위·기술 부채 |
 
-## Pipedrive CRM 연관 프로젝트
+## 교차 영향
 
-| 프로젝트 | 역할 | 공유 자원 |
-|----------|------|-----------|
-| [pipedrive_auto](../pipedrive_auto/) | Pipedrive 딜 -> Google Sheets/Drive 일일 동기화 | Pipedrive API, 딜 데이터 원천 |
-| [pipedrive-dashboard](../pipedrive-dashboard/) | 세일즈 인사이트 HTML 대시보드 | Pipedrive API, 딜 분석 |
-| **PQL_auto** (이 프로젝트) | PQL 리드 엑셀 -> Google Sheets 가공 | Google Drive 폴더, 리드 데이터 |
+| 공유 자원 | 함께 쓰는 프로젝트 | 주의 |
+|---|---|---|
+| Drive `05. PQL` (`1PjCz9YxLLqGLYOZLffPO97tk7UKEGEaF`) | crema `bq_load_customers.py`, alphareview-ref | CSV 헤더가 바뀌면 PQL은 필수 열 누락으로 멈춘다 |
+| Pipedrive 공유 토큰 | pipedrive_auto, team-agent, pipedrive-mcp, crema 등 | PQL이 Sales 딜 생성·shop_id 쓰기를 한다. shop_id·세일즈티어 등 필드 키, 컨택전 단계, 한서연 소유자 변경 시 `src/Config.js` 수정 |
 
-**교차 영향 주의사항:**
-- PQL 리드 엑셀의 컬럼명(`알파리뷰 상태`, `알파업셀 상태`, `알파푸시 상태` 등)은 Pipedrive의 프로덕트/서비스 구분과 동일한 체계를 따른다. 프로덕트명 변경 시 필터링 조건과 라벨링 로직 수정 필요.
-- `필요 서비스` 옵션(알파리뷰, 알파업셀, 알파푸시)은 pipedrive_auto/pipedrive-dashboard의 옵션 매핑과 동일한 체계다.
-- Google Drive 폴더(TARGET_FOLDER_ID: 1PjCz9YxLLqGLYOZLffPO97tk7UKEGEaF)에 엑셀이 업로드되는 프로세스가 변경되면 이 스크립트에 영향.
+정본은 워크스페이스 [ARCHITECTURE.md](../../ARCHITECTURE.md) 교차 영향 표.

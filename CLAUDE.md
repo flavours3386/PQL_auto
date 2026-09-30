@@ -3,132 +3,61 @@
 > 문서 목차 및 핵심 원칙: [AGENTS.md](AGENTS.md)
 
 ## 개요
-구글 드라이브에 업로드된 엑셀(리드) 파일을 Google Sheets로 가져와 필요한 컬럼만 남기고 가공하는 Google Apps Script 자동화 스크립트
+Sales 파이프라인에서 누락된 세일즈 타겟 재고를 찾는 Apps Script. 매월 Drive `05. PQL` 폴더에 올라오는 전사 구독 CSV(`all_subscription_MMDD.csv`, 약 45MB·6.6만 행)를 직접 읽어 공통 클렌징과 업셀·푸시·리뷰 타겟 규칙을 적용하고, Sales 딜이 있는 몰은 빼고, 남은 몰을 Pipedrive 딜로 자동 생성한다. shop_id가 비거나 텍스트인 Sales 딜은 CSV와 대조해 shop_id를 채운다. SDR이 시트 메뉴 한 번으로 실행한다.
 
 ## 기술 스택
-- Google Apps Script
-- Google Drive API v3 (REST, `DriveApp` + `UrlFetchApp` `files.copy`)
-- Google Sheets API
+- Google Apps Script (V8), 바운드 프로젝트 `pql_auto` (scriptId `1bDdQ0oWl-rtXv7z1YNMfez8LhkHwhja0J9hvzo7KbVdCk19ofLYh1_dP`, 시트 `PQL_cleansing_auto`)
+- Drive API v3 REST (`alt=media` Range 분할 다운로드), Pipedrive API v1/v2 REST — 모두 `UrlFetchApp`, Advanced Service 미사용
+- 테스트: node 24 내장 `node:test` (순수 로직만)
+- 배포: clasp 3.4
 
-## 주요 파일
-- `PQL.md` - 전체 스크립트 코드 및 사용법
-
-## 주요 기능
-1. 지정 폴더에서 최신 엑셀 파일 자동 감지
-2. 엑셀 → Google Sheets 변환 후 raw 시트에 데이터 적재
-3. 필터링 조건에 따라 불필요한 행 제거
-4. 서비스 라벨링, 전화번호 포맷팅, 주소 통합 등 데이터 가공
-5. 중요 컬럼 우선 배치된 clean 시트 생성
-
-## 트러블슈팅
-
-### Drive API v2 → v3 마이그레이션 오류 (2026-03-09)
-
-**증상:**
+## 주요 명령어
+```bash
+node --test 'test/*.test.js'   # 테스트 (디렉터리 인자 'test/'는 Node 24에서 동작하지 않음)
+clasp push -f                   # 배포 (.clasp.json rootDir: src)
+clasp pull                      # 원격 확인
 ```
-엑셀 변환 실패 (Drive API v2 확인): 다음 오류로 인해 drive.files.insert API를 호출하지 못했습니다. Bad Request
-```
-
-**원인:**
-Google이 Apps Script Advanced Drive Service의 기본 버전을 v2에서 v3로 자동 변경함. 기존 코드가 v2 문법(`Drive.Files.insert`, `title`, `parents: [{id}]`)을 사용하고 있어 호환성 오류 발생.
-
-**시도한 해결 방법:**
-
-| 시도 | 내용 | 결과 |
-|------|------|------|
-| 1차 | v3 문법으로 변경 (`insert`→`create`, `title`→`name`, `parents` 형식 변경) | Bad Request 지속 |
-| 2차 | blob 콘텐츠 타입 명시 + mimeType 문자열 직접 지정 + `{fields:'id'}` 옵션 추가 | Bad Request 지속 |
-| 3차 (최종) | Advanced Drive Service 완전 제거, `UrlFetchApp`으로 REST API 직접 호출 | 해결 |
-
-**최종 해결:**
-- `Drive.Files.insert` / `Drive.Files.create` (Advanced Service) → `DriveApp.createFile` + `files.copy` API
-- `Drive.Files.remove` → `DriveApp.getFileById().setTrashed(true)`
-- Advanced Drive Service 의존성 완전 제거로 향후 버전 변경 영향 없음
-
-**핵심 코드 (현재 방식):**
-```javascript
-// 1. DriveApp으로 xlsx 업로드
-var tempXlsx = DriveApp.getFolderById(TARGET_FOLDER_ID).createFile(blob);
-// 2. files.copy API로 Google Sheets 변환
-var copyRes = UrlFetchApp.fetch(
-  'https://www.googleapis.com/drive/v3/files/' + tempXlsx.getId() + '/copy?fields=id&supportsAllDrives=true',
-  { method: 'post', contentType: 'application/json',
-    payload: JSON.stringify({ name: '[Temp]', mimeType: 'application/vnd.google-apps.spreadsheet' }),
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true }
-);
-```
-
-**교훈:**
-- Google Advanced Service는 버전 자동 업그레이드로 예고 없이 깨질 수 있음
-- REST API multipart/resumable 업로드보다 `DriveApp` + `files.copy` 분리가 더 안정적
-- Advanced Service 제거 시 서비스 목록에서도 삭제 가능
-
-### 엑셀 변환 400 Bad Request (2026-03-09)
-
-**증상:**
-```
-엑셀 변환 실패: {"error":{"code":400,"message":"Bad Request"...}}
-```
-
-**원인:**
-1. REST API multipart/resumable 업로드 + 변환 시 대용량/암호화 파일에서 400 발생
-2. 비밀번호(열기 암호)가 걸린 xlsx는 Google Drive API가 변환 불가
-
-**시도한 해결 방법:**
-
-| 시도 | 내용 | 결과 |
-|------|------|------|
-| 1차 | `uploadType=multipart` REST API 직접 호출 | 400 Bad Request |
-| 2차 | `uploadType=resumable` 2단계 업로드 | 400 Bad Request |
-| 3차 (최종) | `DriveApp.createFile` + `files.copy` 분리 방식 | 해결 |
-
-**최종 해결:**
-- `DriveApp.createFile(blob)`으로 xlsx를 Drive에 업로드 (REST API 불필요)
-- `files.copy` API로 xlsx → Google Sheets 변환 (mimeType 지정)
-- 비밀번호가 걸린 xlsx는 업로드 전 비밀번호 제거 필요
-
-**교훈:**
-- REST API multipart/resumable 업로드 + 변환은 파일 조건에 따라 불안정
-- `DriveApp` 업로드 + `files.copy` 변환 분리가 더 안정적
-- 비밀번호(열기 암호)가 걸린 xlsx는 Google API로 변환 불가 (시트 보호는 가능)
-
-## 최근 변경사항
-
-### 담당자명 '프로' 필터 기준 변경 (2026-06-30)
-- 과거: 담당자명이 `프로`인 행 전체 제외 (프로 담당자 연락처가 고객사에 일괄 등록돼 있었기 때문)
-- 현재: 연락처 정상화 완료 → `프로` 중 **핸드폰(010)이 아닌 번호**(070/지역번호 등)만 제외, 010이면 유지
-- 판정은 "010 화이트리스트" 방식 (`/^010/`) — 비핸드폰 prefix를 일일이 나열하지 않음
-- 핸드폰 판정에 전화번호 숫자가 필요해 `[전화번호 복구]` 블록을 5번 조건 위로 이동 (1~4번 통과 행만 처리하는 조기탈출 성능 유지). `phoneDigits` 변수 추가
-- 부수효과: 프로 + 핸드폰 행이 살아남아 clean 시트 출력 행 수 증가 (의도된 변화)
-
-### 컬럼명 변경 및 플랫폼 컬럼 추가 (2026-03-09)
-- `카페24` → `플랫폼`으로 컬럼명 변경 (주문수, 회사명 등)
-- 중요 컬럼에 `플랫폼` 추가 (mall_id 다음)
-- `Cafe24-회사명` → `회사명` 통합, 중복 `회사명` 컬럼 제거
-- 필터링 로직 참조 컬럼명도 동기화
-
-### 엑셀 변환 방식 변경 (2026-03-09)
-- REST API multipart/resumable 업로드 → `DriveApp.createFile` + `files.copy` 분리 방식
-- 대용량 파일, 공유 드라이브 등 다양한 환경에서 안정적 동작
-
-### createCleanSheetFromRaw() 성능 최적화 (2026-03-09)
-- `autoResizeColumns(1, 28)` 제거 → `setColumnWidths(1, colCount, 120)` 1회 호출로 대체 (28회 → 1회)
-- `setNumberFormat('@')` 제거 → JS에서 `String()` 변환으로 대체 (API 호출 1회 감소)
-- 필터링 조건에 `Set.has()` 사용 (`Array.includes()` O(n) → O(1))
-- String 변환 1회만 수행 후 재사용, OUTPUT_HEADERS 매핑 함수 사전 생성
-- Sheets API 호출: 기존 ~33회 → 최적화 후 3회 (setValues, setFontWeight, setColumnWidths)
 
 ## 폴더 구조
 ```
 PQL_auto/
-├── CLAUDE.md              # 프로젝트 문서 (이 파일)
-├── AGENTS.md              # 목차 + 핵심 원칙
-├── ARCHITECTURE.md        # 데이터 흐름, 처리 단계
-├── PQL.md                 # Apps Script 코드 + 사용법
-├── docs/
-│   ├── PRODUCT_SENSE.md   # 제품 방향
-│   ├── PLANS.md           # 우선순위, 로드맵
-│   ├── design-docs/       # 설계 문서
-│   └── exec-plans/        # 실행 계획
-└── .gitignore
+├── .clasp.json            # scriptId, rootDir: src
+├── src/
+│   ├── appsscript.json    # 매니페스트 (timeZone Asia/Seoul)
+│   ├── Config.js          # 설정·타겟 규칙·Pipedrive 필드 키 (운영 중 바꾸는 값은 여기만)
+│   ├── Core.js            # 순수 로직: CSV 스트리밍·클렌징·타겟·라벨·역매핑·업로드 재료·빌더
+│   ├── Io.js              # Drive·Pipedrive·Sheets I/O
+│   └── Main.js            # 메뉴·실행 흐름
+├── test/                  # gas.js(로더) + *.test.js
+├── PQL.md                 # 사용법
+├── ARCHITECTURE.md        # 흐름·규칙·제약
+├── CHANGELOG.md           # 지난 세대 변경 기록
+└── docs/                  # PRODUCT_SENSE, PLANS, design-docs(spec), exec-plans(계획)
 ```
+
+## 최근 변경사항
+
+### 2026-09-30 파이프라인 재구축
+- 원인: 원천이 7월부터 CSV 45MB(789만 셀)로 바뀌었는데 스크립트는 xlsx·Sheets만 찾아 옛 파일을 최신으로 잡았고, 전체를 raw 탭에 옮기다 6분 한도·1,000만 셀 한도에 걸렸다. 알파리뷰 `서비스 중단` 띄어쓰기 오타로 82행이 새고 있었다
+- CSV를 20MB Range 조각으로 받아 스트리밍 파서로 한 번 훑는다. raw 탭 폐지, 원천 폴더에는 쓰지 않는다. 약 36초
+- 공통 클렌징 ①~⑥ + 타겟 3종(업셀 cafe24·주문 150+·업셀 라이브 아님 / 푸시 cafe24·500+·푸시 라이브 아님 / 리뷰 1,000+·리뷰 라이브 아님). 라이브는 무료 포함 4종
+- Sales 딜 제외를 코드가 한다(수동 deal list·XLOOKUP 대체). shop_id가 빈칸·텍스트인 딜은 이메일·전화·이름·URL로 CSV와 대조해 키 2개 이상 일치 시 Pipedrive shop_id 자동 반영(노트로 원래 값 보존), 나머지는 `shop_id 매핑` 탭에서 승인/거절
+- 결과를 Pipedrive 딜로 자동 업로드(0901 수동 가져오기와 같은 필드 배치 + 세일즈티어). xlsx는 만들지 않는다(수동 가져오기와 겹치면 중복 딜)
+- 설계 = `docs/design-docs/2026-09-30-pql-pipeline-refactor-design.md`, 계획 = `docs/exec-plans/2026-09-30-pql-pipeline-refactor.md`
+
+## 트러블슈팅
+
+### Apps Script가 CSV BOM을 지워 분할 다운로드 경계가 밀림 (2026-09-30)
+- 증상: 원천 행이 1행 많게 나오고 빈 조각 행(`["",""]`)이 끼어듦
+- 원인: `HTTPResponse.getContentText('UTF-8')`이 파일 첫머리 UTF-8 BOM(3바이트)을 지운다. 첫 조각 바이트 수가 3 적게 계산돼 다음 Range가 3바이트 앞당겨짐. 3바이트 Range 요청(`bytes=0-2`)은 206인데 본문이 비어서 바이트로 판별할 수도 없다
+- 해결: `restoreBom_` — 첫 조각이 BOM 없이 오면 3바이트 뒤부터 받은 글자와 첫머리를 비교해 같으면 BOM을 되돌린다. 빈 응답이면 멈춘다
+- 교훈: node `TextDecoder` 기본값도 BOM을 지운다. 테스트는 행 수가 아니라 행 내용 전체를 비교해야 3바이트 누락을 잡는다
+
+### Google xlsx 내보내기가 숫자를 `600.0`으로 저장 (2026-09-30)
+- Pipedrive shop_id는 텍스트 필드라 `600.0`으로 들어가면 다음 달 숫자 매칭이 깨진다. shop_id는 문자열로 쓴다(현재는 API 업로드라 해당 경로 없음)
+
+### Drive API v2 → v3 자동 전환으로 Advanced Drive Service가 깨짐 (2026-03-09)
+- `Drive.Files.insert` Bad Request → Advanced Service를 완전히 걷어내고 UrlFetch REST 직접 호출로 전환. 이후 Advanced Service는 쓰지 않는다(Golden Principle 1)
+
+### 비밀번호 걸린 xlsx는 Google API로 변환 불가 (2026-03-09)
+- 현재 원천은 CSV라 해당 없음. xlsx를 다시 쓰게 되면 업로드 전 암호 제거 필요

@@ -1,104 +1,73 @@
 # PQL 자동화 - Architecture
 
-## 시스템 개요
-
-Google Drive 특정 폴더에 업로드된 PQL 리드 엑셀 파일을 Google Apps Script로 가져와서 불필요한 행을 필터링하고, 서비스 라벨링/전화번호 포맷팅/주소 통합 등 가공을 수행한 뒤 clean 시트를 생성하는 자동화 스크립트.
-
-## 데이터 흐름
+## 데이터 흐름 (`PQL 생성` 한 번)
 
 ```
-Google Drive 폴더 (1PjCz9YxLLqGLYOZLffPO97tk7UKEGEaF)
-  |
-  v
-[importLatestDataToRaw()]
-  폴더에서 최신 엑셀/시트 파일 탐색 (최종 수정일 기준)
-  |
-  +-- Google Sheets 파일? --> SpreadsheetApp.openById() --> 데이터 읽기
-  +-- XLSX 파일? --> DriveApp.createFile(blob) --> files.copy API (변환) --> 데이터 읽기
-  |
-  v
-  raw 시트에 전체 데이터 적재
-  |
-  v
-[createCleanSheetFromRaw()]
-  |
-  +-- [1단계] 행 필터링 (삭제 조건)
-  |     - 최근 30일 주문수 < 100 또는 빈값
-  |     - 알파업셀 상태: 라이브, 제거중
-  |     - 알파리뷰 상태: 제거중, 해지완료, 서비스 중단
-  |     - 사이트 상태: 구독종료, 해지완료, 계정활성화
-  |     - 담당자명: 프로 + 전화번호가 핸드폰(010) 아님 (070/지역번호 등만 제외, 010이면 유지)
-  |     - 담당자전화번호: 빈값
-  |
-  +-- [2단계] 값 가공
-  |     - 전화번호 포맷팅 (010-XXXX-XXXX)
-  |     - 서비스 라벨링 (알파리뷰, 알파푸시, null)
-  |     - 주소 통합 (주소1 + 주소2)
-  |
-  +-- [3단계] 컬럼 재배치
-  |     - OUTPUT_HEADERS 순서대로 28개 컬럼 배치
-  |     - 중요 컬럼 13개가 앞쪽
-  |
-  v
-  clean_{timestamp} 시트 생성
+0. shop_id 매핑 탭의 '승인' 대기 행 → Pipedrive shop_id 반영
+1. Pipedrive: Sales(9) 딜 전체 · 소유자·단계·라벨 이름표
+   └ shop_id가 숫자가 아닌 딜 → 담당자·조직 조회 → 대조 키(이메일·전화·이름·URL) 역색인
+2. Drive '05. PQL'에서 최신 all_subscription_*.csv (읽기만)
+3. 20MB Range 조각으로 받아 스트리밍 파서로 1회 순회
+   행마다: 역매핑 대조 → 공통 클렌징 ①~⑥(숫자 shop_id 딜 제외)
+4. 역매핑 판정: 키 2개+ 일치 → Pipedrive shop_id 자동 반영 + ⑥ 제외 / 나머지 → 매핑 탭 대기, 결과에 '딜 의심'
+5. 타겟 판정(업셀·푸시·리뷰 중 하나라도) → 결과
+6. 시트 쓰기: deal list, shop_id 매핑, clean_{시각}
+7. Pipedrive 업로드: 결과(딜 의심 제외)마다 조직 → 담당자 → 딜, clean 탭 '업로드' 열에 딜 ID
+8. 요약 창
 ```
 
-## 처리 단계 상세
+시트를 쓴 뒤 업로드한다. 업로드 도중 시간 한도에 걸려도 clean 탭은 남고, 올라간 몰은 딜이 생겨 다음 실행에서 ⑥으로 빠진다.
 
-### 1단계: 파일 가져오기 (importLatestDataToRaw)
+## 규칙
 
-| 단계 | 처리 | 비고 |
-|------|------|------|
-| 폴더 탐색 | DriveApp.getFolderById -> files 순회 | Google Sheets 또는 XLSX만 대상 |
-| 최신 파일 선택 | getLastUpdated().getTime() 비교 | 가장 최근 수정된 파일 |
-| XLSX 변환 | DriveApp.createFile + files.copy API | mimeType: application/vnd.google-apps.spreadsheet |
-| 데이터 읽기 | getDataRange().getValues() | 첫 번째 시트만 |
-| raw 적재 | setValues() + setNumberFormat('@') | 기존 데이터 clear 후 덮어쓰기 |
-| 임시 파일 정리 | setTrashed(true) | XLSX 원본 + 변환 파일 모두 삭제 |
+상태값은 공백을 빼고 비교한다. "라이브"는 `라이브(과금중)`·`라이브(계약구독중)`·`라이브(체험중)`·`라이브(무료구독중)` 4종 모두.
 
-### 2단계: 데이터 가공 (createCleanSheetFromRaw)
+### 공통 클렌징 (순서대로, 하나라도 걸리면 제외)
 
-| 처리 | 조건/로직 | 성능 최적화 |
-|------|-----------|-------------|
-| 행 삭제 | 6개 필터 조건 (주문수, 상태, 담당자, 전화번호) | Set.has() O(1) 검색 |
-| 전화번호 포맷 | 10자리(10으로 시작) -> 0 앞에 추가, 11자리 -> 010-XXXX-XXXX | 정규식 + 조건 분기 |
-| 서비스 라벨 | 리뷰+푸시=양쪽, 리뷰만, 푸시만, 전부 bad=null | badStatusSet 사전 정의 |
-| 주소 통합 | 주소1 + " " + 주소2, trim | |
-| 컬럼 매핑 | headerMappers 사전 생성 (루프 내 if 제거) | 매핑 함수 배열 |
+| # | 제외 조건 |
+|---|---|
+| ① | 최근 30일 플랫폼 주문수 빈값·숫자 아님·100 미만 |
+| ② | 알파리뷰 상태 ∈ {제거중, 해지완료, 서비스중단} |
+| ③ | 사이트 상태 ∈ {구독종료, 해지완료, 계정활성화} |
+| ④ | 담당자명 `프로` + 담당자 전화가 010이 아님 |
+| ⑤ | 담당자전화번호 빈값 |
+| ⑥ | Sales 딜 shop_id(숫자) 또는 역매핑 높은 확신 결과에 있음 |
 
-### Sheets API 호출 최적화
+### 타겟 (하나라도 맞으면 결과, `src/Config.js` `TARGETS`)
 
-| 호출 | 용도 | 횟수 |
-|------|------|------|
-| setValues | 전체 데이터 쓰기 | 1회 |
-| setFontWeight | 헤더 볼드 | 1회 |
-| setColumnWidths | 고정 너비 120px | 1회 |
-| **합계** | | **3회** |
+| 타겟 | 조건 |
+|---|---|
+| 업셀 | cafe24, 주문 150+, 알파업셀 라이브 아님·제거중 아님 |
+| 푸시 | cafe24, 주문 500+, 알파푸시 라이브 아님·제거중 아님 |
+| 리뷰 | 주문 1,000+(아임웹 포함), 알파리뷰 라이브 아님·제거중 아님 |
 
-기존 ~33회(autoResizeColumns 28회 + setNumberFormat 등)에서 3회로 최적화됨.
+### 서비스 라벨 (= Pipedrive 거래 라벨)
+리뷰·업셀·푸시 셋 다 {구독없음, 서비스중단, 프로덕트온보딩중, 빈값}이면 `null`, 아니면 라이브인 제품을 `알파리뷰, 알파업셀, 알파푸시` 순으로. SDR은 라벨에 없는 제품을 제안한다.
 
-## 에러 처리 전략
+### shop_id 역매핑
+대상은 shop_id가 빈칸·텍스트인 Sales 딜(문의 인입 시점엔 shop_id가 없어 AE가 앱 설치 후 수기 입력). 딜의 담당자 이메일·전화, 제목·조직명·쇼핑몰명, URL·텍스트 shop_id를 CSV의 이메일 3열·전화 3열·이름 4열·도메인 3종과 대조한다. 걸린 키 2개 이상의 교집합이 shop 1개면 높은 확신.
 
-| 단계 | 에러 유형 | 처리 방식 |
-|------|-----------|-----------|
-| 파일 탐색 | 폴더 접근 실패, 파일 없음 | UI alert 표시 + return false |
-| XLSX 변환 | files.copy API 400 Bad Request | UI alert + 임시 파일 정리 + return false |
-| 비밀번호 엑셀 | Google API 변환 불가 | 사전에 비밀번호 제거 필요 (수동) |
-| raw 시트 없음 | createCleanSheetFromRaw 호출 시 | Error throw |
-| 데이터 없음 | raw 시트 빈 상태 | Error throw |
+### Pipedrive 쓰기 (공유 토큰, Script Properties)
 
-## 설정 상수
+| 쓰기 | 조건·안전장치 |
+|---|---|
+| 딜 shop_id + 노트 | 숫자 shop_id가 이미 있는 딜은 쓰지 않음. 한 실행 100건 초과면 자동 반영 중단 |
+| 딜·담당자·조직 생성 | 딜: 제목 shop_name, 소유자 한서연, Sales/컨택전, 라벨, shop_id(텍스트)·상점아이디·호스팅사·월 주문 수·쇼핑몰명·URL·세일즈티어(CSV 플랜, `-`면 주문수 구간). 조직은 같은 이름 재사용. 대상 500곳 초과면 전부 보류, 실행 5분 경과 시 중단 |
 
-| 상수 | 값 | 설명 |
-|------|-----|------|
-| TARGET_FOLDER_ID | 1PjCz9YxLLqGLYOZLffPO97tk7UKEGEaF | 리드 파일 업로드 폴더 |
-| RAW_SHEET_NAME | raw | 원본 데이터 적재 시트 |
-| OUTPUT_SHEET_PREFIX | clean_ | 가공 결과 시트 접두사 |
-| OUTPUT_HEADERS | 28개 컬럼 | 중요 13개 + 나머지 15개 |
+## 파일 구성
 
-## 제약사항
+| 파일 | 책임 | 테스트 |
+|---|---|---|
+| `src/Config.js` | 설정·타겟 규칙·필드 키 | - |
+| `src/Core.js` | 순수 로직 (Apps Script 서비스 미사용) | `test/*.test.js` |
+| `src/Io.js` | Drive·Pipedrive·Sheets | 테스트 시트 실행 |
+| `src/Main.js` | 메뉴·실행 흐름 | 테스트 시트 실행 |
 
-- **Google Apps Script(ES5)**: 최신 JS 문법 사용에 제한이 있다. const/let은 사용 가능하나 async/await, optional chaining 등은 불가.
-- **비밀번호 엑셀**: 열기 암호가 걸린 XLSX는 Google Drive API로 변환 불가. 업로드 전 비밀번호 제거 필요.
-- **단일 시트만 처리**: 엑셀의 첫 번째 시트만 읽는다. 멀티 시트 파일은 첫 시트 기준.
-- **실행 시간 제한**: Apps Script 실행 시간은 6분(무료) / 30분(Workspace)으로 제한된다. 대용량 데이터 시 주의.
+Apps Script는 `src/` 파일들을 한 전역 스코프로 합친다. `test/gas.js`가 `Config.js`·`Core.js`를 같은 방식(`vm.runInThisContext`)으로 올린다.
+
+## 제약
+
+- 실행 6분/회 (10/1분 CSV 기준 조회·순회·시트 약 36초 + 업로드)
+- UrlFetch 응답 50MB/회 → 20MB 조각. `getContentText`는 첫머리 BOM을 지운다 → `restoreBom_`
+- 원천 폴더 `05. PQL`은 crema BQ 로더·alphareview-ref도 읽는 공유 폴더 — 읽기만 한다
+- 스프레드시트 1,000만 셀 한도 — 원천 전체를 시트에 옮기지 않는다
