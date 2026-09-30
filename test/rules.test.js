@@ -45,8 +45,11 @@ test('공통 클렌징 사유', () => {
   assert.strictEqual(cleanseReason_(rec(), new Set(['1'])), 'deal');
 });
 
+// 업셀은 주문 150건 이상 (2026-09-30 사용자 결정: 101건 통과는 너무 느슨함)
 test('타겟: 업셀', () => {
   assert.deepStrictEqual(matchTargets_(rec({ '최근 30일 플랫폼 주문수': '200' })), ['업셀']);
+  assert.deepStrictEqual(matchTargets_(rec({ '최근 30일 플랫폼 주문수': '150' })), ['업셀']);
+  assert.deepStrictEqual(matchTargets_(rec({ '최근 30일 플랫폼 주문수': '149' })), []);
   assert.deepStrictEqual(matchTargets_(rec({ '최근 30일 플랫폼 주문수': '200', '알파업셀 상태': '라이브(무료구독중)' })), []);
   assert.deepStrictEqual(matchTargets_(rec({ '최근 30일 플랫폼 주문수': '200', '알파업셀 상태': '제거중' })), []);
   assert.deepStrictEqual(matchTargets_(rec({ 플랫폼: 'imweb' })), []);

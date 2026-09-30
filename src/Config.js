@@ -6,6 +6,7 @@ const SOURCE_NAME_PREFIX = 'all_subscription_';
 const DOWNLOAD_CHUNK_BYTES = 20 * 1024 * 1024; // UrlFetch 응답 한도 50MB/회
 
 const MIN_ORDERS = 100;
+const UPSELL_MIN_ORDERS = 150;
 const PUSH_MIN_ORDERS = 500;
 const REVIEW_MIN_ORDERS = 1000;
 
@@ -56,7 +57,7 @@ const NOT_USED = new Set(['구독없음', '서비스중단', '프로덕트온보
 
 // 타겟 규칙: 하나라도 맞으면 PQL에 남는다. 새 타겟은 항목 하나를 추가한다.
 const TARGETS = [
-  { name: '업셀', test: (r) => r.platform === 'cafe24' && !isLive_(r.upsell) && r.upsell !== '제거중' },
+  { name: '업셀', test: (r) => r.platform === 'cafe24' && r.orders >= UPSELL_MIN_ORDERS && !isLive_(r.upsell) && r.upsell !== '제거중' },
   // 푸시 무료(카페24 PRO 번들)도 라이브로 본다 — 세 제품이 모두 라이브인 몰은 올리지 않는다
   { name: '푸시', test: (r) => r.platform === 'cafe24' && r.orders >= PUSH_MIN_ORDERS && !isLive_(r.push) && r.push !== '제거중' },
   // 리뷰는 아임웹도 지원한다 (플랫폼 조건 없음)
