@@ -6,7 +6,7 @@
 Sales 파이프라인에서 누락된 세일즈 타겟 재고를 찾는 Apps Script. 매월 Drive `05. PQL` 폴더에 올라오는 전사 구독 CSV(`all_subscription_MMDD.csv`, 약 45MB·6.6만 행)를 직접 읽어 공통 클렌징과 업셀·푸시·리뷰 타겟 규칙을 적용하고, Sales 딜이 있는 몰은 빼고, 남은 몰을 Pipedrive 딜로 자동 생성한다. shop_id가 비거나 텍스트인 Sales 딜은 CSV와 대조해 shop_id를 채운다. SDR이 시트 메뉴 한 번으로 실행한다.
 
 ## 기술 스택
-- Google Apps Script (V8), 바운드 프로젝트 `pql_auto` (scriptId `1bDdQ0oWl-rtXv7z1YNMfez8LhkHwhja0J9hvzo7KbVdCk19ofLYh1_dP`, 시트 `PQL_cleansing_auto`)
+- Google Apps Script (V8), 바운드 스크립트 (scriptId `1y8duYMOG6reCDg_2fPSeRhh0_rAQuFqTDNt8Ml7eGDQK0wmM3-yqRirW`, 시트 `PQL_auto` `1G4vYWS_AVRdFouTBB0eD9PwkFUz1kCZCfDDQ4n2j6Lk`). 2026-09-30 이전 시트 `PQL_cleansing_auto`(`13vgWMZ5…`)는 편집 이력이 무거워 시트 쓰기가 7배 느리고 타임아웃이 나서 사용 중지
 - Drive API v3 REST (`alt=media` Range 분할 다운로드), Pipedrive API v1/v2 REST — 모두 `UrlFetchApp`, Advanced Service 미사용
 - 테스트: node 24 내장 `node:test` (순수 로직만)
 - 배포: clasp 3.4
@@ -47,6 +47,13 @@ PQL_auto/
 - 설계 = `docs/design-docs/2026-09-30-pql-pipeline-refactor-design.md`, 계획 = `docs/exec-plans/2026-09-30-pql-pipeline-refactor.md`
 
 ## 트러블슈팅
+
+### 이전 시트에서 '스프레드시트 서비스 타임아웃' (2026-09-30)
+- 증상: `[시트 쓰기] … 스프레드시트 서비스가 타임아웃되었습니다`가 실행마다 다른 탭·작업에서 발생
+- 가설 기각 순서: 표 객체(표2) 삭제 → 동일, 탭 선생성·단계별 flush → 동일, 딜 필드 축소(메모리) → 동일
+- 확정: 같은 실행에서 같은 결과를 새 스프레드시트에 쓰면 8.3초, 이전 시트는 61.5초(7배). 매달 790만 셀 raw 덮어쓰기로 쌓인 편집 이력 탓으로 추정(탭을 지워도 이력은 남음)
+- 해결: 새 스프레드시트 `PQL_auto`로 이전(`.clasp.json` scriptId 교체). 원천 전체를 시트에 쓰지 않으니 다시 무거워지지 않는다
+- 참고: 이 스크립트의 기본 GCP 프로젝트에는 Sheets REST API가 꺼져 있어(403) UrlFetch로 Sheets API를 쓰는 우회는 불가
 
 ### Apps Script가 CSV BOM을 지워 분할 다운로드 경계가 밀림 (2026-09-30)
 - 증상: 원천 행이 1행 많게 나오고 빈 조각 행(`["",""]`)이 끼어듦
