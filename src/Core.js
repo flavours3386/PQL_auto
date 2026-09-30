@@ -446,3 +446,63 @@ function summaryLines_(s) {
     '소요 ' + s.elapsedSec + '초',
   ];
 }
+
+/* ---------- 빌더 ---------- */
+
+// CSV 행을 받아 클렌징·역매핑 대조를 한 번에 하고, 끝나면 역매핑 제외·타겟 판정 후 출력 행을 만든다. 첫 행은 헤더.
+function createPqlBuilder_(opts) {
+  const matcher = createDealMatcher_(opts.unmappedDeals);
+  const counts = { total: 0, orders: 0, review: 0, site: 0, pro: 0, phone: 0, deal: 0, mapped: 0, noTarget: 0 };
+  const kept = [];
+  let hi = null;
+  return {
+    onRow: function (row) {
+      if (!hi) {
+        hi = headerIndex_(row);
+        const missing = REQUIRED_COLUMNS.filter(function (c) { return hi.last[c] === undefined; });
+        if (missing.length) throw new Error('CSV에 필수 열이 없습니다: ' + missing.join(', '));
+        return;
+      }
+      if (row.length === 1 && row[0] === '') return; // 빈 줄
+      counts.total++;
+      const r = toRecord_(row, hi);
+      matcher.onRow(row, hi, r.shopId, r.get('shop_name'));
+      const reason = cleanseReason_(r, opts.dealShopIds);
+      if (reason) counts[reason]++;
+      else kept.push(r);
+    },
+    finish: function () {
+      if (!hi) throw new Error('CSV가 비어 있습니다');
+      const matches = matcher.results(opts.rejectedPairs);
+      const mapped = new Set();
+      const suspect = {};
+      matches.forEach(function (m) {
+        if (m.tier === 'high') mapped.add(m.candidates[0].shopId);
+        else if (m.tier === 'review') {
+          m.candidates.forEach(function (c) { (suspect[c.shopId] = suspect[c.shopId] || []).push(String(m.deal.id)); });
+        }
+      });
+      const cleanRows = [OUTPUT_HEADERS];
+      const uploadRows = [UPLOAD_HEADERS];
+      const targetCounts = {};
+      kept.forEach(function (r) {
+        if (mapped.has(r.shopId)) {
+          counts.mapped++;
+          return;
+        }
+        const targets = matchTargets_(r);
+        if (!targets.length) {
+          counts.noTarget++;
+          return;
+        }
+        const label = serviceLabel_(r);
+        const sus = suspect[r.shopId] || [];
+        cleanRows.push(cleanRow_(r, targets, label, sus));
+        if (!sus.length) uploadRows.push(uploadRow_(r, label));
+        const key = targets.join(', ');
+        targetCounts[key] = (targetCounts[key] || 0) + 1;
+      });
+      return { cleanRows: cleanRows, uploadRows: uploadRows, matches: matches, counts: counts, targetCounts: targetCounts };
+    },
+  };
+}
