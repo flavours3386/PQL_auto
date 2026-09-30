@@ -28,12 +28,12 @@ const CLEAN_TAB_PREFIX = 'clean_';
 const REVIEW_EXCLUDE = new Set(['제거중', '해지완료', '서비스중단']);
 const SITE_EXCLUDE = new Set(['구독종료', '해지완료', '계정활성화']);
 const NOT_USED = new Set(['구독없음', '서비스중단', '프로덕트온보딩중', '']);
-const PAID_LIVE = new Set(['라이브(과금중)', '라이브(계약구독중)', '라이브(체험중)']);
 
 // 타겟 규칙: 하나라도 맞으면 PQL에 남는다. 새 타겟은 항목 하나를 추가한다.
 const TARGETS = [
   { name: '업셀', test: (r) => r.platform === 'cafe24' && !isLive_(r.upsell) && r.upsell !== '제거중' },
-  { name: '푸시', test: (r) => r.platform === 'cafe24' && r.orders >= PUSH_MIN_ORDERS && !PAID_LIVE.has(r.push) && r.push !== '제거중' },
+  // 푸시 무료(카페24 PRO 번들)도 라이브로 본다 — 세 제품이 모두 라이브인 몰은 올리지 않는다
+  { name: '푸시', test: (r) => r.platform === 'cafe24' && r.orders >= PUSH_MIN_ORDERS && !isLive_(r.push) && r.push !== '제거중' },
 ];
 
 const REQUIRED_COLUMNS = ['shop_id', '플랫폼', '최근 30일 플랫폼 주문수', '알파리뷰 상태', '알파업셀 상태', '알파푸시 상태', '사이트 상태', '담당자명', '담당자전화번호'];

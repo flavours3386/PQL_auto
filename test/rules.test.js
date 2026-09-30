@@ -52,9 +52,12 @@ test('타겟: 업셀', () => {
   assert.deepStrictEqual(matchTargets_(rec({ 플랫폼: 'imweb' })), []);
 });
 
-test('타겟: 푸시는 cafe24·주문 500 이상·유료 미사용', () => {
+// 푸시 무료(카페24 PRO 번들)도 라이브로 본다: 세 제품이 모두 라이브인 몰(널핏·척도)은 올리지 않는다 (2026-09-30 사용자 결정)
+test('타겟: 푸시는 cafe24·주문 500 이상·라이브 아님(무료 포함)', () => {
   const up = { '알파업셀 상태': '라이브(과금중)' };
-  assert.deepStrictEqual(matchTargets_(rec(Object.assign({ '알파푸시 상태': '라이브(무료구독중)' }, up))), ['푸시']);
+  assert.deepStrictEqual(matchTargets_(rec(Object.assign({ '알파푸시 상태': '라이브(무료구독중)' }, up))), []);
+  assert.deepStrictEqual(matchTargets_(rec(Object.assign({ '알파푸시 상태': '서비스중단' }, up))), ['푸시']);
+  assert.deepStrictEqual(matchTargets_(rec(Object.assign({ '알파푸시 상태': '프로덕트온보딩중' }, up))), ['푸시']);
   assert.deepStrictEqual(matchTargets_(rec(Object.assign({ '알파푸시 상태': '라이브(과금중)' }, up))), []);
   assert.deepStrictEqual(matchTargets_(rec(Object.assign({ '알파푸시 상태': '라이브(체험중)' }, up))), []);
   assert.deepStrictEqual(matchTargets_(rec(Object.assign({ '최근 30일 플랫폼 주문수': '499' }, up))), []);
