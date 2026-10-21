@@ -1,5 +1,10 @@
 # HANDOFF
 
+## 2026-10-21 — Lead Gen Auto(10) 딜 shop_id도 중복 제외 (PR, 미배포)
+
+- `fetchPipedrive_`가 pipeline 10 딜의 숫자 shop_id를 제외 집합(사유 `deal`)에 합친다. 역매핑·deal list에는 넣지 않는다. 10/21 실측 pipeline 10 딜 1,383건 중 숫자 shop_id 0건(upsell-lead-gen이 채우기 시작하면 늘어남).
+- 운영 반영은 `clasp push -f` 필요(미실행, 사용자 승인 대기). `ARCHITECTURE.md` ①·⑥ 설명은 아직 Sales만 적혀 있다.
+
 ## 2026-09-30 — PQL 파이프라인 재구축 완료, 새 시트에서 라이브 가동
 
 **한 줄 상태**: 새 시트 `PQL_auto`에서 CSV 업로드 → `PQL 생성` 한 번으로 클렌징·Sales 딜 제외·Pipedrive 딜 업로드·업로드 이력 누적까지 끝난다. 2026-10 PQL 194건 업로드 완료. 남은 건 매핑 탭 사람 확인과 다음 달 첫 정기 실행 확인.
