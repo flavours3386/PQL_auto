@@ -6,6 +6,7 @@
 0. shop_id 매핑 탭의 '승인' 대기 행 → Pipedrive shop_id 반영
 1. Pipedrive: Sales(9) 딜 전체 · 소유자·단계·라벨 이름표 (사용자 필드는 shop_id·URL·쇼핑몰명 3개만 요청하고 받자마자 필요한 값만 남긴다 — 94개째 들고 있으면 32.7MB)
    └ shop_id가 숫자가 아닌 딜 → 담당자·조직 조회 → 대조 키(이메일·전화·이름·URL) 역색인
+   Pipedrive: 업셀 전용 Upsell Lead Gen(11) 딜의 숫자 shop_id만 (중복 제외 집합에 합칠 뿐, 역매핑·deal list에는 넣지 않는다)
 2. Drive '05. PQL'에서 최신 all_subscription_*.csv (읽기만)
 3. 20MB Range 조각으로 받아 스트리밍 파서로 1회 순회
    행마다: 역매핑 대조 → 공통 클렌징 ①~⑥(숫자 shop_id 딜 제외)
@@ -32,7 +33,7 @@
 | ③ | 사이트 상태 ∈ {구독종료, 해지완료, 계정활성화} |
 | ④ | 담당자명 `프로` + 담당자 전화가 010이 아님 |
 | ⑤ | 담당자전화번호 빈값 |
-| ⑥ | Sales 딜 shop_id(숫자) 또는 역매핑 높은 확신 결과에 있음 |
+| ⑥ | Sales·업셀(11) 딜 shop_id(숫자) 또는 Sales 역매핑 높은 확신 결과에 있음 |
 
 ### 타겟 (하나라도 맞으면 결과, `src/Config.js` `TARGETS`)
 

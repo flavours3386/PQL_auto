@@ -3,7 +3,7 @@
 > 문서 목차 및 핵심 원칙: [AGENTS.md](AGENTS.md)
 
 ## 개요
-Sales 파이프라인에서 누락된 세일즈 타겟 재고를 찾는 Apps Script. 매월 Drive `05. PQL` 폴더에 올라오는 전사 구독 CSV(`all_subscription_MMDD.csv`, 약 45MB·6.6만 행)를 직접 읽어 공통 클렌징과 업셀·푸시·리뷰 타겟 규칙을 적용하고, Sales 딜이 있는 몰은 빼고, 남은 몰을 Pipedrive 딜로 자동 생성한다. shop_id가 비거나 텍스트인 Sales 딜은 CSV와 대조해 shop_id를 채운다. SDR이 시트 메뉴 한 번으로 실행한다.
+Sales 파이프라인에서 누락된 세일즈 타겟 재고를 찾는 Apps Script. 매월 Drive `05. PQL` 폴더에 올라오는 전사 구독 CSV(`all_subscription_MMDD.csv`, 약 45MB·6.6만 행)를 직접 읽어 공통 클렌징과 업셀·푸시·리뷰 타겟 규칙을 적용하고, Sales 딜이나 업셀 파이프라인(11) 딜이 있는 몰은 빼고, 남은 몰을 Pipedrive 딜로 자동 생성한다. shop_id가 비거나 텍스트인 Sales 딜은 CSV와 대조해 shop_id를 채운다. SDR이 시트 메뉴 한 번으로 실행한다.
 
 ## 기술 스택
 - Google Apps Script (V8), 바운드 스크립트 (scriptId `1y8duYMOG6reCDg_2fPSeRhh0_rAQuFqTDNt8Ml7eGDQK0wmM3-yqRirW`, 시트 `PQL_auto` `1G4vYWS_AVRdFouTBB0eD9PwkFUz1kCZCfDDQ4n2j6Lk`). 2026-09-30 이전 시트 `PQL_cleansing_auto`(`13vgWMZ5…`)는 편집 이력이 무거워 시트 쓰기가 7배 느리고 타임아웃이 나서 사용 중지
