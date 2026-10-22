@@ -11,6 +11,7 @@ const PUSH_MIN_ORDERS = 500;
 const REVIEW_MIN_ORDERS = 1000;
 
 const SALES_PIPELINE_ID = 9;
+const UPSELL_PIPELINE_ID = 11; // Upsell Lead Gen (upsell-lead-gen). 딜의 숫자 shop_id를 중복 제외에만 쓴다
 const PD_FIELD_SHOP_ID = '9d4ea1fcf0bde157910e96a2e0354e76c220e6c8';
 const PD_FIELD_URL = '5a7464db665cc9fb3cebc7530c536f39205768ca';
 const PD_FIELD_MALL_NAME = '4cf3a83ff7316bb926dbf2c7f9c7b92308bad7bc';

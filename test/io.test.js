@@ -35,7 +35,7 @@ function fakePipedrive(opts) {
     }
     if (route === 'POST /api/v1/notes') { db.notes.push(body); return respond(201, { data: { id: 1 } }); }
     if (route === 'GET /api/v2/deals') {
-      const all = opts.listDeals || [];
+      const all = (path.includes('pipeline_id=' + UPSELL_PIPELINE_ID + '&') ? opts.upsellDeals : opts.listDeals) || [];
       const start = Number((/cursor=(\d+)/.exec(path) || [0, 0])[1]);
       const page = all.slice(start, start + 2);
       return respond(200, { data: page, additional_data: { next_cursor: start + 2 < all.length ? String(start + 2) : null } });
@@ -236,7 +236,7 @@ test('딜 조회는 사용자 필드 3개만 요청하고 필요한 값만 남�
     status: 'open', value: 0, add_time: 'x', custom_fields: Object.assign({ [PD_FIELD_SHOP_ID]: shop, [PD_FIELD_URL]: 'u.com', [PD_FIELD_MALL_NAME]: 'm' }, big) });
   const pd = fakePipedrive({ listDeals: [deal(1, '101'), deal(2, '채널톡'), deal(3, '')] });
   const r = fetchPipedrive_('t');
-  const listCalls = pd.calls.filter((c) => c.route === 'GET /api/v2/deals');
+  const listCalls = pd.calls.filter((c) => c.route === 'GET /api/v2/deals' && c.path.includes('pipeline_id=' + SALES_PIPELINE_ID + '&'));
   assert.strictEqual(listCalls.length, 2);
   listCalls.forEach((c) => {
     const cf = decodeURIComponent(/custom_fields=([^&]*)/.exec(c.path)[1]).split(',').sort();
@@ -246,6 +246,24 @@ test('딜 조회는 사용자 필드 3개만 요청하고 필요한 값만 남�
   assert.deepStrictEqual(Object.keys(r.deals[0].custom_fields).sort(), [PD_FIELD_SHOP_ID, PD_FIELD_URL, PD_FIELD_MALL_NAME].sort());
   assert.deepStrictEqual([...r.dealShopIds], ['101']);
   assert.deepStrictEqual(r.unmappedDeals.map((d) => [d.id, d.raw, d.keys.email]), [[2, '채널톡', ['e102@x.com']], [3, '', ['e103@x.com']]]);
+});
+
+// upsell-lead-gen이 업셀 파이프라인 Upsell Lead Gen(11)에 shop_id를 채운 딜을 만든다(2026-10-21). 그 몰에 연락처가 생겨도 Sales 딜을 또 만들지 않게 한다.
+test('업셀 딜은 숫자 shop_id만 제외에 합치고, 역매핑·deal list에는 넣지 않는다', () => {
+  const deal = (id, shop) => ({ id: id, title: 't' + id, person_id: id + 100, org_id: null, custom_fields: shop == null ? {} : { [PD_FIELD_SHOP_ID]: shop } });
+  const pd = fakePipedrive({ listDeals: [deal(1, '101'), deal(2, '채널톡')], upsellDeals: [deal(11, '202'), deal(12, ''), deal(13, '크리마'), deal(14, null)] });
+  const r = fetchPipedrive_('t');
+  const upCalls = pd.calls.filter((c) => c.route === 'GET /api/v2/deals' && c.path.includes('pipeline_id=' + UPSELL_PIPELINE_ID + '&'));
+  assert.strictEqual(upCalls.length, 2);
+  upCalls.forEach((c) => assert.strictEqual(decodeURIComponent(/custom_fields=([^&]*)/.exec(c.path)[1]), PD_FIELD_SHOP_ID));
+  assert.deepStrictEqual([...r.dealShopIds].sort(), ['101', '202']);
+  assert.deepStrictEqual(r.deals.map((d) => d.id), [1, 2]);
+  assert.deepStrictEqual(r.unmappedDeals.map((d) => d.id), [2]);
+  const hi = headerIndex_(['shop_id', '최근 30일 플랫폼 주문수', '담당자전화번호']);
+  const rec = (id) => toRecord_([id, '600', '010-1234-5678'], hi);
+  assert.strictEqual(cleanseReason_(rec('202'), r.dealShopIds), 'deal'); // 업셀에만 있음
+  assert.strictEqual(cleanseReason_(rec('101'), r.dealShopIds), 'deal'); // Sales
+  assert.strictEqual(cleanseReason_(rec('303'), r.dealShopIds), '');
 });
 
 test('업로드 이력 탭: 비어 있으면 헤더를 쓰고, 마지막 행 아래에 이어 붙인다', () => {

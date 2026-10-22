@@ -583,7 +583,7 @@ function summaryLines_(s) {
     '③ 사이트 구독종료·해지완료·계정활성화 -' + c.site,
     '④ 프로 담당자 + 비핸드폰 -' + c.pro,
     '⑤ 담당자 전화 없음 -' + c.phone,
-    '⑥ Sales 딜 있음(shop_id) -' + c.deal,
+    '⑥ Sales·업셀 딜 있음(shop_id) -' + c.deal,
     '⑥ Sales 딜 있음(역매핑) -' + c.mapped,
     '타겟 해당 없음 -' + c.noTarget,
     '결과 ' + s.cleanCount + '곳 (' + t + ')',

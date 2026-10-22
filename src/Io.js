@@ -66,6 +66,9 @@ function uniqueIds_(arr) {
 function fetchPipedrive_(token) {
   const deals = pdList_(token, '/api/v2/deals?pipeline_id=' + SALES_PIPELINE_ID + '&custom_fields=' + PD_DEAL_CUSTOM_FIELDS.join(','), slimDeal_);
   const split = splitDeals_(deals);
+  // 업셀 딜에 shop_id가 있는 몰은 Sales 딜을 또 만들지 않는다. 역매핑·deal list에는 넣지 않으므로 shop_id만 받는다.
+  pdList_(token, '/api/v2/deals?pipeline_id=' + UPSELL_PIPELINE_ID + '&custom_fields=' + PD_FIELD_SHOP_ID, rawShopId_)
+    .forEach(function (v) { if (/^\d+$/.test(v)) split.shopIds.add(v); });
   const persons = pdByIds_(token, 'persons', uniqueIds_(split.unmapped.map(function (d) { return d.person_id; })));
   const orgs = pdByIds_(token, 'organizations', uniqueIds_(split.unmapped.map(function (d) { return d.org_id; })));
   const unmappedDeals = split.unmapped.map(function (d) {
