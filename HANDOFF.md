@@ -1,8 +1,8 @@
 # HANDOFF
 
-## 2026-10-21 — Lead Gen Auto(10) 딜 shop_id도 중복 제외 (PR, 미배포)
+## 2026-10-21 — 업셀 파이프라인(11) 딜 shop_id도 중복 제외 (PR #3, 미배포)
 
-- `fetchPipedrive_`가 pipeline 10 딜의 숫자 shop_id를 제외 집합(사유 `deal`)에 합친다. 역매핑·deal list에는 넣지 않는다. 10/21 실측 pipeline 10 딜 1,383건 중 숫자 shop_id 0건(upsell-lead-gen이 채우기 시작하면 늘어남).
+- `fetchPipedrive_`가 업셀 전용 pipeline 11 `Upsell Lead Gen` 딜의 숫자 shop_id를 제외 집합(사유 `deal`)에 합친다(`UPSELL_PIPELINE_ID`). 역매핑·deal list에는 넣지 않는다. 처음엔 Lead Gen Auto(10) 기준으로 만들었으나 업셀 딜을 별도 파이프라인에 만들기로 바뀌어(upsell-lead-gen D9) 10/22 11로 교체했다. 11은 10/21 생성이라 아직 딜이 거의 없다(upsell-lead-gen이 shop_id를 채운 딜을 만들기 시작하면 늘어남). ID 근거 = `Work/upsell-lead-gen/docs/research/2026-10-21-pipedrive-upsell-ids.md`.
 - 운영 반영은 `clasp push -f` 필요(미실행, 사용자 승인 대기). `ARCHITECTURE.md` ①·⑥ 설명은 아직 Sales만 적혀 있다.
 
 ## 2026-09-30 — PQL 파이프라인 재구축 완료, 새 시트에서 라이브 가동
