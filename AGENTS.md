@@ -47,6 +47,10 @@ PQL_auto/
 
 ## 트러블슈팅
 
+### clasp 토큰이 하루 안팎으로 만료 (`invalid_grant` / `invalid_rapt`) (2026-10-27)
+- 원인: 회사 Workspace의 Google Cloud 세션 제어(재인증 정책). clasp 3.4 기본 로그인 스코프에 `cloud-platform`·`service.management`·`logging.read`가 있어 정책 대상이 되고, 세션 시간이 지나면 갱신 토큰이 거부된다(오류 링크 support.google.com/a/answer/9368756)
+- 대응: `! clasp login`. 근본 해결은 관리자가 clasp를 신뢰 앱으로 등록해 재인증에서 빼거나 세션을 늘리는 것 — 2026-10-27 사용자 결정으로 보류
+
 ### 이전 시트에서 '스프레드시트 서비스 타임아웃' (2026-09-30)
 - 증상: `[시트 쓰기] … 스프레드시트 서비스가 타임아웃되었습니다`가 실행마다 다른 탭·작업에서 발생
 - 가설 기각 순서: 표 객체(표2) 삭제 → 동일, 탭 선생성·단계별 flush → 동일, 딜 필드 축소(메모리) → 동일
@@ -80,7 +84,7 @@ PQL_auto/
 ## Golden Principles
 
 1. **Advanced Service를 쓰지 않는다** — Drive v2→v3 자동 전환으로 깨진 전력이 있다. Drive·Pipedrive 모두 UrlFetch REST.
-2. **원천 폴더 `05. PQL`에는 쓰지 않는다** — crema BQ 로더·alphareview-ref가 같은 폴더에서 최신 CSV를 읽는다.
+2. **원천 폴더 `05. PQL`에는 쓰지 않는다** — crema BQ 로더가 같은 폴더의 최신 CSV를 BQ에 적재하고, alphareview-ref·upsell-lead-gen·SQL v3가 그 BQ를 읽는다.
 3. **순수 로직은 Core.js에, 테스트 먼저** — Apps Script 서비스를 쓰는 코드는 Io.js·Main.js로 격리한다.
 4. **시트 쓰기는 계산이 끝난 뒤, Pipedrive 업로드는 시트 쓰기 뒤** — 중간 실패로 반쯤 만든 탭이 남지 않고, 업로드가 끊겨도 다음 실행이 이어받는다.
 5. **Pipedrive 쓰기는 조건부** — 숫자 shop_id는 덮어쓰지 않는다. 자동 반영 100건·업로드 500곳 상한을 넘으면 멈춘다. 필드 키·단계·소유자는 `src/Config.js`에만 둔다.
@@ -102,7 +106,7 @@ PQL_auto/
 
 | 공유 자원 | 함께 쓰는 프로젝트 | 주의 |
 |---|---|---|
-| Drive `05. PQL` (`1PjCz9YxLLqGLYOZLffPO97tk7UKEGEaF`) | crema `bq_load_customers.py`, alphareview-ref | CSV 헤더가 바뀌면 PQL은 필수 열 누락으로 멈춘다 |
+| Drive `05. PQL` (`1PjCz9YxLLqGLYOZLffPO97tk7UKEGEaF`) | 직접: crema `bq_load_customers.py`(매월 2일 06:00 → BQ `leadgen.subscriptions`). BQ 경유: alphareview-ref·upsell-lead-gen·SQL v3 | CSV 헤더가 바뀌면 PQL은 필수 열 누락으로 멈추고 BQ 소비처도 함께 영향. PQL은 실행 즉시 새 CSV를 읽지만 BQ 소비처는 2일 적재 뒤에 반영 |
 | Pipedrive 공유 토큰 | pipedrive_auto, team-agent, pipedrive-mcp, crema 등 | PQL이 Sales 딜 생성·shop_id 쓰기를 한다. shop_id·세일즈티어 등 필드 키, 컨택전 단계, 한서연 소유자 변경 시 `src/Config.js` 수정 |
 
 정본은 워크스페이스 [ARCHITECTURE.md](../../ARCHITECTURE.md) 교차 영향 표.

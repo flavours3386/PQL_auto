@@ -1,5 +1,13 @@
 # HANDOFF
 
+## 2026-10-27 — 11월 CSV 업로드 확인, 구독 CSV 소비처·적재 시점 정리 (코드 변경 없음)
+
+- 11월분 `all_subscription_1101.csv`가 10/27 09:26 KST에 올라와 있다. PQL은 지금 실행해도 이 파일을 읽는다(업로드 이력 월 = 2026-11). crema BQ 적재는 11/2 06:00, alphareview-ref 반영은 11/3 06:00.
+- PR #3(업셀 11 제외) 라이브 반영 여부는 미확인 — clasp 토큰 만료(`invalid_rapt`, AGENTS.md 트러블슈팅)로 원격 비교를 못 했다. 11월 실행 전 `! clasp login` → 원격과 비교 → 필요하면 `clasp push -f`. 10/21 항목의 "ARCHITECTURE ①·⑥ 미반영"은 8e86069에서 반영됐다.
+- 구독 CSV 소비처 정리: 직접 = PQL_auto·crema 로더(매월 2일 06:00 → BQ `leadgen.subscriptions`, 이번 달 파일이 아니면 실패). BQ 경유 = SQL v3(새 문의마다 최신 스냅샷 조회, 캐시 없음)·alphareview-ref(매월 3일 06:00)·upsell-lead-gen(매일 08:00, 그쪽 HANDOFF 기준 스케줄러 미가동)·crema 데일리 잡. AGENTS.md 교차 영향·Golden Principle 2와 ARCHITECTURE 제약의 "alphareview-ref가 폴더를 읽는다"를 정정했다(BQ를 읽는다).
+- 결정: crema 적재를 업로드 시점 트리거·재시도 cron으로 바꾸지 않는다 — 사용자가 말일 전에 다음 달 CSV를 올리므로 불필요. 업로드가 2일 이후로 늦어지는 일이 생기면 `0 6 2-10 * *` 재시도 안을 다시 꺼낸다.
+- 다음: 11월 `PQL 생성` 실행·결과 확인(9/30 항목 2번), `shop_id 매핑` 대기 행 판정(대기 행은 매 실행 다시 만들어지므로 지워도 되지만 `거절됨` 행은 지우지 말 것).
+
 ## 2026-10-21 — 업셀 파이프라인(11) 딜 shop_id도 중복 제외 (PR #3, 미배포)
 
 - `fetchPipedrive_`가 업셀 전용 pipeline 11 `Upsell Lead Gen` 딜의 숫자 shop_id를 제외 집합(사유 `deal`)에 합친다(`UPSELL_PIPELINE_ID`). 역매핑·deal list에는 넣지 않는다. 처음엔 Lead Gen Auto(10) 기준으로 만들었으나 업셀 딜을 별도 파이프라인에 만들기로 바뀌어(upsell-lead-gen D9) 10/22 11로 교체했다. 11은 10/21 생성이라 아직 딜이 거의 없다(upsell-lead-gen이 shop_id를 채운 딜을 만들기 시작하면 늘어남). ID 근거 = `Work/upsell-lead-gen/docs/research/2026-10-21-pipedrive-upsell-ids.md`.
